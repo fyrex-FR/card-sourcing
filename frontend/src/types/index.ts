@@ -6,6 +6,7 @@ export type Watchlist = {
   max_price: number | null;
   marketplace: string;
   country_filter: string;
+  buying_option: 'ALL' | 'AUCTION' | 'FIXED_PRICE';
   notes: string | null;
   active: boolean;
   last_scan_at: string | null;
@@ -25,6 +26,7 @@ export type SourcingItem = {
   seller_feedback: number | null;
   country: string | null;
   condition: string | null;
+  buying_options: string[] | null;
   status: 'new' | 'watching' | 'ignored' | 'bought' | 'too_expensive';
   first_seen_at: string;
 };

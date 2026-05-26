@@ -151,6 +151,29 @@ button:disabled {
   gap: 10px;
 }
 
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid #292d31;
+  border-radius: 8px;
+  background: #101214;
+}
+
+.segmented button {
+  min-height: 32px;
+  padding: 0 8px;
+  background: transparent;
+  color: #a9aaa7;
+  font-size: 12px;
+}
+
+.segmented button.selected {
+  background: #e2b14f;
+  color: #15110a;
+}
+
 .watchlist-list {
   display: grid;
   gap: 8px;

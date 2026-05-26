@@ -6,12 +6,17 @@ create table if not exists public.sourcing_watchlists (
     max_price numeric,
     marketplace text not null default 'EBAY_US',
     country_filter text not null default 'CN',
+    buying_option text not null default 'AUCTION' check (buying_option in ('ALL', 'AUCTION', 'FIXED_PRICE')),
     notes text,
     active boolean not null default true,
     last_scan_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
+
+alter table public.sourcing_watchlists
+    add column if not exists buying_option text not null default 'AUCTION'
+    check (buying_option in ('ALL', 'AUCTION', 'FIXED_PRICE'));
 
 create table if not exists public.sourcing_items (
     id uuid primary key default gen_random_uuid(),

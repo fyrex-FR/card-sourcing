@@ -61,6 +61,7 @@ async def search_active_listings(
     marketplace: str = "EBAY_US",
     country_filter: str | None = None,
     max_price: float | None = None,
+    buying_option: str | None = None,
 ) -> dict[str, Any]:
     if not query.strip():
         return {"error": "empty_query", "results": []}
@@ -72,6 +73,8 @@ async def search_active_listings(
     filters = []
     if country_filter:
         filters.append(f"itemLocationCountry:{country_filter.upper()}")
+    if buying_option and buying_option.upper() != "ALL":
+        filters.append(f"buyingOptions:{{{buying_option.upper()}}}")
     if max_price is not None:
         filters.append(f"price:[..{float(max_price)}]")
         filters.append("priceCurrency:USD")

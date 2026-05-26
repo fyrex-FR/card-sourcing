@@ -17,6 +17,7 @@ class WatchlistCreate(BaseModel):
     max_price: float | None = Field(default=None, ge=0)
     marketplace: str = "EBAY_US"
     country_filter: str = "CN"
+    buying_option: Literal["ALL", "AUCTION", "FIXED_PRICE"] = "AUCTION"
     notes: str | None = None
 
 
@@ -26,6 +27,7 @@ class WatchlistUpdate(BaseModel):
     max_price: float | None = Field(default=None, ge=0)
     marketplace: str | None = None
     country_filter: str | None = None
+    buying_option: Literal["ALL", "AUCTION", "FIXED_PRICE"] | None = None
     notes: str | None = None
     active: bool | None = None
 
@@ -119,12 +121,14 @@ async def update_item_status(item_id: str, body: ItemStatusUpdate, user: dict = 
 async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
     watchlist = await _get_watchlist(watchlist_id, user)
     country_filter = (watchlist.get("country_filter") or "").upper()
+    buying_option = (watchlist.get("buying_option") or "ALL").upper()
     max_price = watchlist.get("max_price")
     ebay_data = await search_active_listings(
         watchlist["query"],
         marketplace=watchlist.get("marketplace") or "EBAY_US",
         country_filter=country_filter or None,
         max_price=float(max_price) if max_price is not None else None,
+        buying_option=buying_option,
     )
     if ebay_data.get("error"):
         return ebay_data
@@ -134,6 +138,8 @@ async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
 
     for item in ebay_data["results"]:
         if country_filter and (item.get("country") or "").upper() != country_filter:
+            continue
+        if buying_option != "ALL" and buying_option not in [option.upper() for option in item.get("buying_options", [])]:
             continue
         if max_price is not None and item["price"] > float(max_price):
             continue

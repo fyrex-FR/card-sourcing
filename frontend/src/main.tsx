@@ -12,6 +12,7 @@ type FormState = {
   query: string;
   max_price: string;
   country_filter: string;
+  buying_option: Watchlist['buying_option'];
 };
 
 type StatusFilter = 'all' | SourcingItem['status'];
@@ -21,6 +22,7 @@ const initialForm: FormState = {
   query: '',
   max_price: '',
   country_filter: 'CN',
+  buying_option: 'AUCTION',
 };
 
 const statusLabels: Record<SourcingItem['status'], string> = {
@@ -29,6 +31,12 @@ const statusLabels: Record<SourcingItem['status'], string> = {
   ignored: 'ignore',
   bought: 'achete',
   too_expensive: 'trop cher',
+};
+
+const buyingOptionLabels: Record<Watchlist['buying_option'], string> = {
+  ALL: 'tout',
+  AUCTION: 'encheres',
+  FIXED_PRICE: 'achat immediat',
 };
 
 function money(value: number | null, currency = 'USD') {
@@ -145,6 +153,7 @@ function App() {
           query: form.query,
           max_price: form.max_price ? Number(form.max_price) : null,
           country_filter: form.country_filter.toUpperCase(),
+          buying_option: form.buying_option,
         }),
       });
       setWatchlists((current) => [created, ...current]);
@@ -220,6 +229,18 @@ function App() {
             <input placeholder="Prix max" type="number" min="0" step="0.01" value={form.max_price} onChange={(event) => setForm({ ...form, max_price: event.target.value })} />
             <input placeholder="Pays" value={form.country_filter} onChange={(event) => setForm({ ...form, country_filter: event.target.value })} />
           </div>
+          <div className="segmented" aria-label="Format eBay">
+            {(['AUCTION', 'FIXED_PRICE', 'ALL'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={form.buying_option === option ? 'selected' : ''}
+                onClick={() => setForm({ ...form, buying_option: option })}
+              >
+                {buyingOptionLabels[option]}
+              </button>
+            ))}
+          </div>
           <button disabled={busy === 'create'}><Search size={16} /> Ajouter</button>
         </form>
 
@@ -246,7 +267,7 @@ function App() {
         <header className="content-header">
           <div>
             <h1>{selectedWatchlist?.name ?? 'Aucune recherche'}</h1>
-            <p>{selectedWatchlist ? `${selectedWatchlist.query} | ${selectedWatchlist.country_filter} | max ${money(selectedWatchlist.max_price)}` : 'Ajoute une recherche pour commencer.'}</p>
+            <p>{selectedWatchlist ? `${selectedWatchlist.query} | ${selectedWatchlist.country_filter} | ${buyingOptionLabels[selectedWatchlist.buying_option ?? 'ALL']} | max ${money(selectedWatchlist.max_price)}` : 'Ajoute une recherche pour commencer.'}</p>
           </div>
           {selectedWatchlist && (
             <div className="actions">
@@ -316,6 +337,7 @@ function App() {
                   <strong>{money(totalPrice(item), item.currency)}</strong>
                   {item.shipping_price ? <span>dont port {money(item.shipping_price, item.currency)}</span> : <span>port inconnu</span>}
                   <span>{item.country || '??'}</span>
+                  {item.buying_options?.length ? <span>{item.buying_options.includes('AUCTION') ? 'enchere' : item.buying_options.includes('FIXED_PRICE') ? 'achat immediat' : item.buying_options.join(', ')}</span> : null}
                   <span>{item.seller_username || 'vendeur inconnu'}</span>
                   {item.condition && <span>{item.condition}</span>}
                 </div>
