@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from routers.auth import current_user
-from services.ebay_service import search_active_listings
+from services.ebay_service import search_active_listings, search_seller_ending_auctions
 from services.supabase_rest import request
 
 router = APIRouter()
@@ -127,6 +127,23 @@ async def update_item_status(item_id: str, body: ItemStatusUpdate, user: dict = 
     if not rows:
         raise HTTPException(status_code=404, detail="item_not_found")
     return rows[0]
+
+
+@router.get("/sellers/{seller_username}/ending-auctions")
+async def seller_ending_auctions(
+    seller_username: str,
+    query: str = "nba card",
+    days: int = 7,
+    marketplace: str = "EBAY_US",
+    user: dict = Depends(current_user),
+):
+    _user_id(user)
+    return await search_seller_ending_auctions(
+        seller_username,
+        query=query,
+        days=days,
+        marketplace=marketplace,
+    )
 
 
 @router.post("/watchlists/{watchlist_id}/scan")

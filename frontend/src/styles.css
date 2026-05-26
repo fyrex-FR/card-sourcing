@@ -334,10 +334,19 @@ button:disabled {
   background: #171a1d;
 }
 
+.app-shell.seller-open {
+  grid-template-columns: 340px 1fr 420px;
+}
+
 .thumb {
   background: #0f1113;
   display: grid;
   place-items: center;
+}
+
+.thumb.small {
+  width: 76px;
+  min-height: 96px;
 }
 
 .thumb img {
@@ -395,6 +404,112 @@ button:disabled {
   color: #92989d;
 }
 
+.seller-link {
+  min-height: 22px;
+  padding: 0;
+  background: transparent;
+  color: #e2b14f;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.seller-panel {
+  border-left: 1px solid #292d31;
+  background: #15181b;
+  padding: 18px;
+  overflow: auto;
+}
+
+.seller-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.seller-panel-header div,
+.seller-next {
+  display: grid;
+  gap: 4px;
+}
+
+.seller-panel-header span,
+.seller-summary span,
+.seller-next span {
+  color: #a9aaa7;
+  font-size: 12px;
+}
+
+.seller-panel-header .ghost {
+  width: auto;
+  padding: 0 12px;
+}
+
+.seller-search {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.seller-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.seller-summary div,
+.seller-next {
+  border: 1px solid #292d31;
+  border-radius: 8px;
+  background: #171a1d;
+  padding: 11px;
+}
+
+.seller-next {
+  margin-bottom: 12px;
+}
+
+.seller-next strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seller-items {
+  display: grid;
+  gap: 10px;
+}
+
+.seller-item {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 10px;
+  border: 1px solid #292d31;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #171a1d;
+}
+
+.seller-item > div:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px 10px 10px 0;
+}
+
+.seller-item strong {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.compact {
+  min-height: 120px;
+  padding: 14px;
+}
+
 .status-row {
   display: flex;
   flex-wrap: wrap;
@@ -442,9 +557,18 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .app-shell.seller-open {
+    grid-template-columns: 1fr;
+  }
+
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid #292d31;
+  }
+
+  .seller-panel {
+    border-left: 0;
+    border-top: 1px solid #292d31;
   }
 
   .content-header {

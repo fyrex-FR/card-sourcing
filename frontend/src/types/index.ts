@@ -16,6 +16,7 @@ export type Watchlist = {
 export type SourcingItem = {
   id: string;
   watchlist_id: string;
+  external_id?: string | null;
   title: string;
   price: number;
   currency: string;
@@ -42,4 +43,15 @@ export type ScanResult = {
   error?: string;
   details?: string;
   items?: SourcingItem[];
+};
+
+export type SellerAuctionResult = {
+  count: number;
+  total?: number;
+  seller_username: string;
+  query: string;
+  days: number;
+  results: SourcingItem[];
+  error?: string;
+  details?: string;
 };

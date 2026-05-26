@@ -1,6 +1,7 @@
 import base64
 import os
 import time
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -72,6 +73,50 @@ def _fallback_queries(query: str) -> list[str]:
     return unique
 
 
+def _format_ebay_datetime(value: datetime) -> str:
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _parse_item_summary(item: dict[str, Any], *, match_query: str, original_query: str) -> dict[str, Any] | None:
+    price_obj = item.get("price") or item.get("currentBidPrice") or {}
+    price = _to_float(price_obj.get("value"))
+    if price is None:
+        return None
+
+    image = ""
+    if item.get("image"):
+        image = item["image"].get("imageUrl", "")
+    elif item.get("thumbnailImages"):
+        image = item["thumbnailImages"][0].get("imageUrl", "")
+
+    seller = item.get("seller") or {}
+    location = item.get("itemLocation") or {}
+    shipping_options = item.get("shippingOptions") or []
+    shipping = None
+    if shipping_options:
+        shipping = _to_float((shipping_options[0].get("shippingCost") or {}).get("value"))
+
+    return {
+        "external_id": item.get("itemId"),
+        "title": item.get("title", ""),
+        "price": price,
+        "currency": price_obj.get("currency", "USD"),
+        "shipping_price": shipping,
+        "url": item.get("itemWebUrl", ""),
+        "image_url": image,
+        "seller_username": seller.get("username", ""),
+        "seller_feedback": seller.get("feedbackPercentage"),
+        "country": location.get("country", ""),
+        "condition": item.get("condition", ""),
+        "buying_options": item.get("buyingOptions", []),
+        "auction_end_at": item.get("itemEndDate"),
+        "bid_count": item.get("bidCount"),
+        "match_query": match_query,
+        "match_quality": "exact" if match_query.lower() == original_query.strip().lower() else "partial",
+        "raw": item,
+    }
+
+
 async def search_active_listings(
     query: str,
     *,
@@ -133,44 +178,65 @@ async def search_active_listings(
 
     results = []
     for item in data.get("itemSummaries", []):
-        price_obj = item.get("price") or item.get("currentBidPrice") or {}
-        price = _to_float(price_obj.get("value"))
-        if price is None:
-            continue
-
-        image = ""
-        if item.get("image"):
-            image = item["image"].get("imageUrl", "")
-        elif item.get("thumbnailImages"):
-            image = item["thumbnailImages"][0].get("imageUrl", "")
-
-        seller = item.get("seller") or {}
-        location = item.get("itemLocation") or {}
-        shipping_options = item.get("shippingOptions") or []
-        shipping = None
-        if shipping_options:
-            shipping = _to_float((shipping_options[0].get("shippingCost") or {}).get("value"))
-
-        results.append(
-            {
-                "external_id": item.get("itemId"),
-                "title": item.get("title", ""),
-                "price": price,
-                "currency": price_obj.get("currency", "USD"),
-                "shipping_price": shipping,
-                "url": item.get("itemWebUrl", ""),
-                "image_url": image,
-                "seller_username": seller.get("username", ""),
-                "seller_feedback": seller.get("feedbackPercentage"),
-                "country": location.get("country", ""),
-                "condition": item.get("condition", ""),
-                "buying_options": item.get("buyingOptions", []),
-                "auction_end_at": item.get("itemEndDate"),
-                "bid_count": item.get("bidCount"),
-                "match_query": params["q"],
-                "match_quality": "exact" if params["q"].lower() == query.strip().lower() else "partial",
-                "raw": item,
-            }
-        )
+        parsed = _parse_item_summary(item, match_query=params["q"], original_query=query)
+        if parsed:
+            results.append(parsed)
 
     return {"count": len(results), "results": results, "search_queries": search_queries}
+
+
+async def search_seller_ending_auctions(
+    seller_username: str,
+    *,
+    query: str = "nba card",
+    days: int = 7,
+    max_results: int = 100,
+    marketplace: str = "EBAY_US",
+) -> dict[str, Any]:
+    seller = seller_username.strip()
+    search_query = query.strip() or "nba card"
+    if not seller:
+        return {"error": "empty_seller", "results": []}
+
+    token = await _get_access_token()
+    if not token:
+        return {"error": "missing_ebay_token", "results": []}
+
+    end_at = _format_ebay_datetime(datetime.now(UTC) + timedelta(days=max(1, min(days, 30))))
+    filters = [
+        f"sellers:{{{seller}}}",
+        "buyingOptions:{AUCTION}",
+        f"itemEndDate:[..{end_at}]",
+    ]
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-EBAY-C-MARKETPLACE-ID": marketplace,
+        "Content-Type": "application/json",
+    }
+    params = {
+        "q": search_query,
+        "sort": "endingSoonest",
+        "limit": min(max(max_results, 1), 100),
+        "filter": ",".join(filters),
+    }
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        resp = await client.get(EBAY_BROWSE_URL, headers=headers, params=params)
+    if resp.status_code != 200:
+        return {"error": f"ebay_api_{resp.status_code}", "details": resp.text[:500], "results": []}
+
+    data = resp.json()
+    results = []
+    for item in data.get("itemSummaries", []):
+        parsed = _parse_item_summary(item, match_query=search_query, original_query=search_query)
+        if parsed:
+            results.append(parsed)
+
+    return {
+        "count": len(results),
+        "total": data.get("total", len(results)),
+        "seller_username": seller,
+        "query": search_query,
+        "days": days,
+        "results": results,
+    }

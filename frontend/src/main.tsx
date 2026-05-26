@@ -4,7 +4,7 @@ import { Clock, ExternalLink, Eye, RefreshCw, Search, Trash2 } from 'lucide-reac
 import { apiFetch } from './api/client';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
-import type { ScanResult, SourcingItem, Watchlist } from './types';
+import type { ScanResult, SellerAuctionResult, SourcingItem, Watchlist } from './types';
 import './styles.css';
 
 type FormState = {
@@ -119,6 +119,14 @@ function App() {
   const [error, setError] = useState('');
   const [scanMessage, setScanMessage] = useState('');
   const [now, setNow] = useState(() => Date.now());
+  const [sellerPanel, setSellerPanel] = useState<{
+    seller: string;
+    query: string;
+    loading: boolean;
+    error: string;
+    items: SourcingItem[];
+    total: number;
+  } | null>(null);
 
   const selectedWatchlist = useMemo(
     () => watchlists.find((watchlist) => watchlist.id === selectedId) ?? watchlists[0],
@@ -246,11 +254,46 @@ function App() {
     setSelectedId(null);
   }
 
+  async function openSellerPanel(seller: string, query = 'nba card') {
+    const cleanSeller = seller.trim();
+    if (!cleanSeller) return;
+    const cleanQuery = query.trim() || 'nba card';
+    setSellerPanel({ seller: cleanSeller, query: cleanQuery, loading: true, error: '', items: [], total: 0 });
+    try {
+      const result = await apiFetch<SellerAuctionResult>(
+        `/sellers/${encodeURIComponent(cleanSeller)}/ending-auctions?query=${encodeURIComponent(cleanQuery)}&days=7`,
+      );
+      if (result.error) {
+        setSellerPanel({ seller: cleanSeller, query: cleanQuery, loading: false, error: result.details ? `${result.error}: ${result.details}` : result.error, items: [], total: 0 });
+        return;
+      }
+      setSellerPanel({
+        seller: cleanSeller,
+        query: cleanQuery,
+        loading: false,
+        error: '',
+        items: result.results ?? [],
+        total: result.total ?? result.count ?? 0,
+      });
+    } catch (err) {
+      setSellerPanel({ seller: cleanSeller, query: cleanQuery, loading: false, error: err instanceof Error ? err.message : 'Erreur inconnue', items: [], total: 0 });
+    }
+  }
+
+  const sellerBasket = useMemo(() => {
+    const sellerItems = sellerPanel?.items ?? [];
+    return {
+      count: sellerItems.length,
+      total: sellerItems.reduce((sum, item) => sum + totalPrice(item), 0),
+      nextEnding: sellerItems.find((item) => item.auction_end_at) ?? null,
+    };
+  }, [sellerPanel?.items]);
+
   if (loading) return <main className="center">Chargement...</main>;
   if (!session) return <LoginView />;
 
   return (
-    <main className="app-shell">
+    <main className={sellerPanel ? 'app-shell seller-open' : 'app-shell'}>
       <aside className="sidebar">
         <div className="topbar">
           <div>
@@ -389,7 +432,11 @@ function App() {
                   )}
                   {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} enchere{item.bid_count > 1 ? 's' : ''}</span> : null}
                   {item.match_quality === 'partial' && item.match_query ? <span>match partiel: {item.match_query}</span> : null}
-                  <span>{item.seller_username || 'vendeur inconnu'}</span>
+                  {item.seller_username ? (
+                    <button className="seller-link" onClick={() => openSellerPanel(item.seller_username ?? '', 'nba card')}>
+                      {item.seller_username}
+                    </button>
+                  ) : <span>vendeur inconnu</span>}
                   {item.condition && <span>{item.condition}</span>}
                 </div>
                 <div className="status-row">
@@ -412,6 +459,77 @@ function App() {
           </div>
         )}
       </section>
+      {sellerPanel && (
+        <aside className="seller-panel">
+          <div className="seller-panel-header">
+            <div>
+              <span>Vendeur</span>
+              <strong>{sellerPanel.seller}</strong>
+            </div>
+            <button className="ghost" onClick={() => setSellerPanel(null)}>Fermer</button>
+          </div>
+
+          <form
+            className="seller-search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              openSellerPanel(sellerPanel.seller, sellerPanel.query);
+            }}
+          >
+            <input
+              value={sellerPanel.query}
+              onChange={(event) => setSellerPanel({ ...sellerPanel, query: event.target.value })}
+              placeholder="Recherche vendeur"
+            />
+            <button disabled={sellerPanel.loading}><Search size={15} /> Voir</button>
+          </form>
+
+          <div className="seller-summary">
+            <div>
+              <span>Encheres J+7</span>
+              <strong>{sellerPanel.loading ? '-' : sellerBasket.count}</strong>
+            </div>
+            <div>
+              <span>Panier potentiel</span>
+              <strong>{money(sellerBasket.total, sellerPanel.items[0]?.currency ?? 'USD')}</strong>
+            </div>
+          </div>
+
+          {sellerBasket.nextEnding && (
+            <div className="seller-next">
+              <span>Prochaine fin</span>
+              <strong>{timeLeftLabel(sellerBasket.nextEnding.auction_end_at, now)} - {sellerBasket.nextEnding.title}</strong>
+            </div>
+          )}
+
+          {sellerPanel.error && <div className="notice">{sellerPanel.error}</div>}
+          {sellerPanel.loading && <div className="empty-state compact">Chargement des encheres vendeur...</div>}
+          {!sellerPanel.loading && !sellerPanel.error && sellerPanel.items.length === 0 && (
+            <div className="empty-state compact">Aucune enchere trouvee sur 7 jours pour cette recherche.</div>
+          )}
+
+          <div className="seller-items">
+            {sellerPanel.items.map((item) => (
+              <article className="seller-item" key={item.external_id ?? item.url}>
+                <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
+                <div>
+                  <strong>{item.title}</strong>
+                  <div className="meta">
+                    <span>{money(totalPrice(item), item.currency)}</span>
+                    {item.auction_end_at && (
+                      <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
+                        <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
+                      </span>
+                    )}
+                    {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} bid{item.bid_count > 1 ? 's' : ''}</span> : null}
+                  </div>
+                  <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
+                </div>
+              </article>
+            ))}
+          </div>
+        </aside>
+      )}
     </main>
   );
 }
