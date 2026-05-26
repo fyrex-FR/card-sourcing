@@ -1,0 +1,299 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #111315;
+  color: #f4f1eb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.center,
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #111315;
+}
+
+.login-panel {
+  width: min(360px, calc(100vw - 32px));
+  display: grid;
+  gap: 14px;
+}
+
+.brand-mark {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #e2b14f;
+  color: #15110a;
+  font-weight: 900;
+}
+
+.login-panel h1 {
+  margin: 8px 0 0;
+}
+
+.login-panel p {
+  margin: 0 0 12px;
+  color: #a9aaa7;
+}
+
+input {
+  min-height: 42px;
+  border: 1px solid #32363a;
+  border-radius: 7px;
+  background: #1a1d20;
+  color: #f4f1eb;
+  padding: 0 12px;
+  outline: none;
+}
+
+input:focus {
+  border-color: #e2b14f;
+}
+
+button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 7px;
+  background: #e2b14f;
+  color: #15110a;
+  font-weight: 760;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+button:disabled {
+  opacity: 0.55;
+}
+
+.error,
+.notice {
+  color: #ff938a;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  background: #111315;
+}
+
+.sidebar {
+  border-right: 1px solid #292d31;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: #15181b;
+}
+
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.topbar div {
+  display: grid;
+  gap: 3px;
+}
+
+.topbar span,
+.watchlist small,
+.content-header p,
+.meta {
+  color: #a9aaa7;
+  font-size: 13px;
+}
+
+.icon-button,
+.ghost {
+  width: 38px;
+  padding: 0;
+  background: #24282c;
+  color: #f4f1eb;
+}
+
+.danger {
+  color: #ff938a;
+}
+
+.watch-form {
+  display: grid;
+  gap: 10px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 72px;
+  gap: 10px;
+}
+
+.watchlist-list {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+}
+
+.watchlist {
+  min-height: 64px;
+  background: transparent;
+  color: #f4f1eb;
+  border: 1px solid #292d31;
+  display: grid;
+  justify-items: start;
+  text-align: left;
+  padding: 10px;
+}
+
+.watchlist.active {
+  border-color: #e2b14f;
+  background: #211d14;
+}
+
+.content {
+  padding: 24px;
+  overflow: auto;
+}
+
+.content-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.content-header h1 {
+  margin: 0 0 6px;
+  font-size: 28px;
+}
+
+.content-header p {
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.notice {
+  padding: 10px 12px;
+  border: 1px solid #6a2a25;
+  border-radius: 7px;
+  margin-bottom: 16px;
+  background: #211615;
+}
+
+.items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 14px;
+}
+
+.item-card {
+  display: grid;
+  grid-template-columns: 108px 1fr;
+  min-height: 152px;
+  border: 1px solid #292d31;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #171a1d;
+}
+
+.thumb {
+  background: #0f1113;
+  display: grid;
+  place-items: center;
+}
+
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.item-body {
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.item-title {
+  line-height: 1.25;
+  font-weight: 720;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.meta strong {
+  color: #f4f1eb;
+}
+
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  min-height: 28px;
+  padding: 0 9px;
+  background: #24282c;
+  color: #d8d5ce;
+  font-size: 12px;
+}
+
+.chip.selected {
+  background: #e2b14f;
+  color: #15110a;
+}
+
+a {
+  color: #e2b14f;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+@media (max-width: 860px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid #292d31;
+  }
+
+  .content-header {
+    flex-direction: column;
+  }
+}
