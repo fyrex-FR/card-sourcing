@@ -516,6 +516,21 @@ button:disabled {
   gap: 6px;
 }
 
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.secondary-action {
+  min-height: 30px;
+  padding: 0 10px;
+  background: #24282c;
+  color: #f4f1eb;
+  font-size: 12px;
+}
+
 .chip {
   min-height: 28px;
   padding: 0 9px;

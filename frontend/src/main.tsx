@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Clock, ExternalLink, Eye, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Clock, ExternalLink, Eye, RefreshCw, Search, Store, Trash2 } from 'lucide-react';
 import { apiFetch } from './api/client';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
@@ -446,7 +446,14 @@ function App() {
                     </button>
                   ))}
                 </div>
-                <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
+                <div className="card-actions">
+                  {item.seller_username && (
+                    <button className="secondary-action" onClick={() => openSellerPanel(item.seller_username ?? '', 'nba card')}>
+                      <Store size={15} /> Voir vendeur
+                    </button>
+                  )}
+                  <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
+                </div>
               </div>
             </article>
           ))}
