@@ -35,6 +35,8 @@ create table if not exists public.sourcing_items (
     country text,
     condition text,
     buying_options jsonb,
+    auction_end_at timestamptz,
+    bid_count integer,
     match_query text,
     match_quality text,
     status text not null default 'new' check (status in ('new', 'watching', 'ignored', 'bought', 'too_expensive')),
@@ -45,6 +47,8 @@ create table if not exists public.sourcing_items (
 );
 
 alter table public.sourcing_items
+    add column if not exists auction_end_at timestamptz,
+    add column if not exists bid_count integer,
     add column if not exists match_query text,
     add column if not exists match_quality text;
 

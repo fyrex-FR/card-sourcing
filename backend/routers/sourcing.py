@@ -36,8 +36,20 @@ class ItemStatusUpdate(BaseModel):
     status: Literal["new", "watching", "ignored", "bought", "too_expensive"]
 
 
+OPTIONAL_ITEM_COLUMNS = {"auction_end_at", "bid_count", "match_query", "match_quality"}
+
+
 def _user_id(user: dict) -> str:
     return user.get("sub") or user["id"]
+
+
+def _without_optional_item_columns(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if key not in OPTIONAL_ITEM_COLUMNS}
+
+
+def _is_missing_optional_column(exc: HTTPException) -> bool:
+    detail = str(exc.detail)
+    return exc.status_code == 400 and any(column in detail for column in OPTIONAL_ITEM_COLUMNS)
 
 
 async def _get_watchlist(watchlist_id: str, user: dict) -> dict[str, Any]:
@@ -160,20 +172,42 @@ async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
         payload = {
             "user_id": user_id,
             "watchlist_id": watchlist_id,
-            **{key: value for key, value in item.items() if key not in {"raw", "match_query", "match_quality"}},
+            **{key: value for key, value in item.items() if key != "raw"},
             "source": "ebay",
             "raw": item.get("raw"),
         }
         if existing:
-            rows = await request(
-                "PATCH",
-                "sourcing_items",
-                params={"id": f"eq.{existing[0]['id']}", "user_id": f"eq.{user_id}"},
-                json={**payload, "last_seen_at": datetime.now(timezone.utc).isoformat()},
-                prefer="return=representation",
-            )
+            update_payload = {**payload, "last_seen_at": datetime.now(timezone.utc).isoformat()}
+            try:
+                rows = await request(
+                    "PATCH",
+                    "sourcing_items",
+                    params={"id": f"eq.{existing[0]['id']}", "user_id": f"eq.{user_id}"},
+                    json=update_payload,
+                    prefer="return=representation",
+                )
+            except HTTPException as exc:
+                if not _is_missing_optional_column(exc):
+                    raise
+                rows = await request(
+                    "PATCH",
+                    "sourcing_items",
+                    params={"id": f"eq.{existing[0]['id']}", "user_id": f"eq.{user_id}"},
+                    json=_without_optional_item_columns(update_payload),
+                    prefer="return=representation",
+                )
         else:
-            rows = await request("POST", "sourcing_items", json=payload, prefer="return=representation")
+            try:
+                rows = await request("POST", "sourcing_items", json=payload, prefer="return=representation")
+            except HTTPException as exc:
+                if not _is_missing_optional_column(exc):
+                    raise
+                rows = await request(
+                    "POST",
+                    "sourcing_items",
+                    json=_without_optional_item_columns(payload),
+                    prefer="return=representation",
+                )
         saved.append(rows[0])
 
     await request(

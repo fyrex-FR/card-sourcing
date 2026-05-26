@@ -360,11 +360,39 @@ button:disabled {
 .meta {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 
 .meta strong {
   color: #f4f1eb;
+}
+
+.countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  border-radius: 6px;
+  padding: 0 7px;
+  background: #20282a;
+  color: #cfe8df;
+  font-weight: 780;
+}
+
+.countdown.soon {
+  background: #2b2616;
+  color: #f0cc73;
+}
+
+.countdown.hot {
+  background: #351a17;
+  color: #ff9c91;
+}
+
+.countdown.ended {
+  background: #2a2d30;
+  color: #92989d;
 }
 
 .status-row {

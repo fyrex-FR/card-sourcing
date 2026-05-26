@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ExternalLink, Eye, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { Clock, ExternalLink, Eye, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { apiFetch } from './api/client';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
@@ -53,6 +53,31 @@ function totalPrice(item: SourcingItem) {
   return Number(item.price ?? 0) + Number(item.shipping_price ?? 0);
 }
 
+function timeLeftLabel(value: string | null, now: number) {
+  if (!value) return null;
+  const diff = new Date(value).getTime() - now;
+  if (!Number.isFinite(diff)) return null;
+  if (diff <= 0) return 'terminee';
+
+  const totalMinutes = Math.floor(diff / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) return `${days}j ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${Math.max(minutes, 1)}m`;
+}
+
+function auctionUrgency(value: string | null, now: number) {
+  if (!value) return '';
+  const hoursLeft = (new Date(value).getTime() - now) / 36e5;
+  if (hoursLeft <= 0) return 'ended';
+  if (hoursLeft <= 6) return 'hot';
+  if (hoursLeft <= 24) return 'soon';
+  return '';
+}
+
 function LoginView() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -93,30 +118,40 @@ function App() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [scanMessage, setScanMessage] = useState('');
+  const [now, setNow] = useState(() => Date.now());
 
   const selectedWatchlist = useMemo(
     () => watchlists.find((watchlist) => watchlist.id === selectedId) ?? watchlists[0],
     [selectedId, watchlists],
   );
 
-  const visibleItems = useMemo(
-    () => (statusFilter === 'all' ? items : items.filter((item) => item.status === statusFilter)),
-    [items, statusFilter],
-  );
+  const visibleItems = useMemo(() => {
+    const filtered = statusFilter === 'all' ? items : items.filter((item) => item.status === statusFilter);
+    return [...filtered].sort((left, right) => {
+      const leftEnd = left.auction_end_at ? new Date(left.auction_end_at).getTime() : Number.POSITIVE_INFINITY;
+      const rightEnd = right.auction_end_at ? new Date(right.auction_end_at).getTime() : Number.POSITIVE_INFINITY;
+      if (leftEnd !== rightEnd) return leftEnd - rightEnd;
+      return totalPrice(left) - totalPrice(right);
+    });
+  }, [items, statusFilter]);
 
   const stats = useMemo(() => {
     const active = items.filter((item) => item.status === 'new' || item.status === 'watching');
     const bought = items.filter((item) => item.status === 'bought');
     const cheapest = active.reduce<SourcingItem | null>((best, item) => (!best || totalPrice(item) < totalPrice(best) ? item : best), null);
+    const nextEnding = active
+      .filter((item) => item.auction_end_at && new Date(item.auction_end_at).getTime() > now)
+      .reduce<SourcingItem | null>((best, item) => (!best || new Date(item.auction_end_at!).getTime() < new Date(best.auction_end_at!).getTime() ? item : best), null);
     return {
       total: items.length,
       active: active.length,
       bought: bought.length,
       ignored: items.filter((item) => item.status === 'ignored' || item.status === 'too_expensive').length,
       cheapest,
+      nextEnding,
       potentialSpend: active.reduce((sum, item) => sum + totalPrice(item), 0),
     };
-  }, [items]);
+  }, [items, now]);
 
   async function load() {
     setError('');
@@ -132,6 +167,11 @@ function App() {
     if (!session) return;
     load().catch((err) => setError(err.message));
   }, [session]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!session || !selectedId) return;
@@ -310,6 +350,10 @@ function App() {
                 <span>Meilleure entree</span>
                 <strong>{stats.cheapest ? `${money(totalPrice(stats.cheapest), stats.cheapest.currency)} - ${stats.cheapest.title}` : 'Aucune carte active'}</strong>
               </div>
+              <div>
+                <span>Prochaine fin</span>
+                <strong>{stats.nextEnding ? `${timeLeftLabel(stats.nextEnding.auction_end_at, now)} - ${money(totalPrice(stats.nextEnding), stats.nextEnding.currency)} - ${stats.nextEnding.title}` : 'Aucune enchere datee'}</strong>
+              </div>
               <span>Dernier scan : {dateLabel(selectedWatchlist.last_scan_at)}</span>
             </div>
 
@@ -338,6 +382,12 @@ function App() {
                   {item.shipping_price ? <span>dont port {money(item.shipping_price, item.currency)}</span> : <span>port inconnu</span>}
                   <span>{item.country || '??'}</span>
                   {item.buying_options?.length ? <span>{item.buying_options.includes('AUCTION') ? 'enchere' : item.buying_options.includes('FIXED_PRICE') ? 'achat immediat' : item.buying_options.join(', ')}</span> : null}
+                  {item.auction_end_at && (
+                    <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
+                      <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
+                    </span>
+                  )}
+                  {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} enchere{item.bid_count > 1 ? 's' : ''}</span> : null}
                   {item.match_quality === 'partial' && item.match_query ? <span>match partiel: {item.match_query}</span> : null}
                   <span>{item.seller_username || 'vendeur inconnu'}</span>
                   {item.condition && <span>{item.condition}</span>}

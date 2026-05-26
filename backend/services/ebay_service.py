@@ -165,6 +165,8 @@ async def search_active_listings(
                 "country": location.get("country", ""),
                 "condition": item.get("condition", ""),
                 "buying_options": item.get("buyingOptions", []),
+                "auction_end_at": item.get("itemEndDate"),
+                "bid_count": item.get("bidCount"),
                 "match_query": params["q"],
                 "match_quality": "exact" if params["q"].lower() == query.strip().lower() else "partial",
                 "raw": item,
