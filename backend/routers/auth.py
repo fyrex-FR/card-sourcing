@@ -1,4 +1,3 @@
-import json
 import os
 
 import jwt as pyjwt
@@ -8,38 +7,20 @@ from fastapi.security import HTTPBearer
 bearer = HTTPBearer()
 
 
-def _load_public_key():
-    jwk = os.getenv("SUPABASE_JWT_JWK")
-    if jwk:
-        return pyjwt.algorithms.ECAlgorithm.from_jwk(jwk)
-
-    public_key = os.getenv("SUPABASE_JWT_PUBLIC_KEY")
-    if public_key:
-        return public_key
-
-    fallback_jwk = {
-        "alg": "ES256",
-        "crv": "P-256",
-        "kid": "ed3a0d01-318d-4e00-a40c-0e0233cd3d3f",
-        "kty": "EC",
-        "use": "sig",
-        "x": "YCp9zlNRQ9_KENWBJlksJL1Lrjw3DaRZp4GSmm6OeMM",
-        "y": "obAm1VW4xqeVZbv2ulpIaHZyFdhjuOzY5uJ5xr3i7Qc",
-    }
-    return pyjwt.algorithms.ECAlgorithm.from_jwk(json.dumps(fallback_jwk))
-
-
-_public_key = _load_public_key()
-
-
 async def current_user(token=Depends(bearer)) -> dict:
     try:
+        jwt_secret = os.getenv("SUPABASE_JWT_SECRET")
+        if not jwt_secret:
+            raise HTTPException(status_code=500, detail="SUPABASE_JWT_SECRET is missing")
+
         payload = pyjwt.decode(
             token.credentials,
-            _public_key,
-            algorithms=["ES256", "RS256"],
+            jwt_secret,
+            algorithms=["HS256"],
             audience="authenticated",
         )
+    except HTTPException:
+        raise
     except pyjwt.PyJWTError as exc:
         raise HTTPException(status_code=401, detail=f"invalid_token: {exc}") from exc
 

@@ -25,8 +25,8 @@ Backend env (`backend/.env`, see `backend/.env.example`):
 
 ```bash
 SUPABASE_URL=
-SUPABASE_SERVICE_KEY=
-SUPABASE_JWT_JWK=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_JWT_SECRET=
 ALLOWED_EMAILS=xavier@example.com,friend@example.com
 EBAY_CLIENT_ID=
 EBAY_CLIENT_SECRET=
