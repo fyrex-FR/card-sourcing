@@ -133,7 +133,7 @@ async def search_active_listings(
 
     results = []
     for item in data.get("itemSummaries", []):
-        price_obj = item.get("price") or {}
+        price_obj = item.get("price") or item.get("currentBidPrice") or {}
         price = _to_float(price_obj.get("value"))
         if price is None:
             continue
