@@ -35,7 +35,7 @@ class ItemStatusUpdate(BaseModel):
 
 
 def _user_id(user: dict) -> str:
-    return user["sub"]
+    return user.get("sub") or user["id"]
 
 
 async def _get_watchlist(watchlist_id: str, user: dict) -> dict[str, Any]:
