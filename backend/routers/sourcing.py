@@ -160,7 +160,7 @@ async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
         payload = {
             "user_id": user_id,
             "watchlist_id": watchlist_id,
-            **{key: value for key, value in item.items() if key != "raw"},
+            **{key: value for key, value in item.items() if key not in {"raw", "match_query", "match_quality"}},
             "source": "ebay",
             "raw": item.get("raw"),
         }
