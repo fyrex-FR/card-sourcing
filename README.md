@@ -21,7 +21,7 @@ Private sourcing app for NBA card opportunities, starting with China-filtered eB
 
 Apply `backend/sql/001_sourcing_schema.sql` in Supabase SQL editor.
 
-Backend env:
+Backend env (`backend/.env`, see `backend/.env.example`):
 
 ```bash
 SUPABASE_URL=
@@ -33,7 +33,7 @@ EBAY_CLIENT_SECRET=
 CORS_ORIGINS=https://your-frontend-domain.example
 ```
 
-Frontend env:
+Frontend env (`frontend/.env`, see `frontend/.env.example`):
 
 ```bash
 VITE_SUPABASE_URL=
