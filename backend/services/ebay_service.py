@@ -54,7 +54,14 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
-async def search_active_listings(query: str, *, max_results: int = 40, marketplace: str = "EBAY_US") -> dict[str, Any]:
+async def search_active_listings(
+    query: str,
+    *,
+    max_results: int = 100,
+    marketplace: str = "EBAY_US",
+    country_filter: str | None = None,
+    max_price: float | None = None,
+) -> dict[str, Any]:
     if not query.strip():
         return {"error": "empty_query", "results": []}
 
@@ -62,11 +69,20 @@ async def search_active_listings(query: str, *, max_results: int = 40, marketpla
     if not token:
         return {"error": "missing_ebay_token", "results": []}
 
+    filters = []
+    if country_filter:
+        filters.append(f"itemLocationCountry:{country_filter.upper()}")
+    if max_price is not None:
+        filters.append(f"price:[..{float(max_price)}]")
+        filters.append("priceCurrency:USD")
+
     params = {
         "q": query.strip(),
         "sort": "price",
         "limit": min(max(max_results, 1), 100),
     }
+    if filters:
+        params["filter"] = ",".join(filters)
     headers = {
         "Authorization": f"Bearer {token}",
         "X-EBAY-C-MARKETPLACE-ID": marketplace,

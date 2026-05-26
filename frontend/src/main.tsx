@@ -4,7 +4,7 @@ import { ExternalLink, Eye, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { apiFetch } from './api/client';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
-import type { SourcingItem, Watchlist } from './types';
+import type { ScanResult, SourcingItem, Watchlist } from './types';
 import './styles.css';
 
 type FormState = {
@@ -84,6 +84,7 @@ function App() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [scanMessage, setScanMessage] = useState('');
 
   const selectedWatchlist = useMemo(
     () => watchlists.find((watchlist) => watchlist.id === selectedId) ?? watchlists[0],
@@ -135,6 +136,7 @@ function App() {
     event.preventDefault();
     setBusy('create');
     setError('');
+    setScanMessage('');
     try {
       const created = await apiFetch<Watchlist>('/watchlists', {
         method: 'POST',
@@ -158,8 +160,20 @@ function App() {
   async function scan(watchlistId: string) {
     setBusy(`scan:${watchlistId}`);
     setError('');
+    setScanMessage('');
     try {
-      await apiFetch(`/watchlists/${watchlistId}/scan`, { method: 'POST' });
+      const result = await apiFetch<ScanResult>(`/watchlists/${watchlistId}/scan`, { method: 'POST' });
+      if (result.error) {
+        setError(result.details ? `${result.error}: ${result.details}` : result.error);
+        return;
+      }
+      const scanned = result.scanned_count ?? 0;
+      const candidates = result.candidate_count ?? result.count;
+      setScanMessage(
+        result.count > 0
+          ? `${result.count} annonce${result.count > 1 ? 's' : ''} importee${result.count > 1 ? 's' : ''}.`
+          : `Scan termine : ${scanned} annonce${scanned > 1 ? 's' : ''} eBay trouvee${scanned > 1 ? 's' : ''}, ${candidates} compatible${candidates > 1 ? 's' : ''} avec les filtres.`,
+      );
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur inconnue');
@@ -247,6 +261,7 @@ function App() {
         </header>
 
         {error && <div className="notice">{error}</div>}
+        {scanMessage && <div className="notice success">{scanMessage}</div>}
 
         {selectedWatchlist && (
           <>

@@ -28,3 +28,12 @@ export type SourcingItem = {
   status: 'new' | 'watching' | 'ignored' | 'bought' | 'too_expensive';
   first_seen_at: string;
 };
+
+export type ScanResult = {
+  count: number;
+  scanned_count?: number;
+  candidate_count?: number;
+  error?: string;
+  details?: string;
+  items?: SourcingItem[];
+};

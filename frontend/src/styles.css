@@ -217,6 +217,12 @@ button:disabled {
   background: #211615;
 }
 
+.notice.success {
+  color: #9fd5bd;
+  border-color: #285a43;
+  background: #132019;
+}
+
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(130px, 1fr));

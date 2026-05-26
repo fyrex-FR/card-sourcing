@@ -118,13 +118,18 @@ async def update_item_status(item_id: str, body: ItemStatusUpdate, user: dict = 
 @router.post("/watchlists/{watchlist_id}/scan")
 async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
     watchlist = await _get_watchlist(watchlist_id, user)
-    ebay_data = await search_active_listings(watchlist["query"], marketplace=watchlist.get("marketplace") or "EBAY_US")
+    country_filter = (watchlist.get("country_filter") or "").upper()
+    max_price = watchlist.get("max_price")
+    ebay_data = await search_active_listings(
+        watchlist["query"],
+        marketplace=watchlist.get("marketplace") or "EBAY_US",
+        country_filter=country_filter or None,
+        max_price=float(max_price) if max_price is not None else None,
+    )
     if ebay_data.get("error"):
         return ebay_data
 
     user_id = _user_id(user)
-    country_filter = (watchlist.get("country_filter") or "").upper()
-    max_price = watchlist.get("max_price")
     candidates = []
 
     for item in ebay_data["results"]:
@@ -172,4 +177,9 @@ async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
         json={"last_scan_at": datetime.now(timezone.utc).isoformat()},
     )
 
-    return {"count": len(saved), "items": saved}
+    return {
+        "count": len(saved),
+        "scanned_count": ebay_data.get("count", len(ebay_data["results"])),
+        "candidate_count": len(candidates),
+        "items": saved,
+    }
