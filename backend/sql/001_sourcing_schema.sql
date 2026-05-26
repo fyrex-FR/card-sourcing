@@ -35,12 +35,18 @@ create table if not exists public.sourcing_items (
     country text,
     condition text,
     buying_options jsonb,
+    match_query text,
+    match_quality text,
     status text not null default 'new' check (status in ('new', 'watching', 'ignored', 'bought', 'too_expensive')),
     raw jsonb,
     first_seen_at timestamptz not null default now(),
     last_seen_at timestamptz not null default now(),
     unique (user_id, watchlist_id, source, external_id)
 );
+
+alter table public.sourcing_items
+    add column if not exists match_query text,
+    add column if not exists match_quality text;
 
 alter table public.sourcing_watchlists enable row level security;
 alter table public.sourcing_items enable row level security;

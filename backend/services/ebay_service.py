@@ -54,6 +54,24 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+def _fallback_queries(query: str) -> list[str]:
+    words = query.strip().split()
+    fallbacks = []
+    if len(words) >= 3:
+        # eBay web often shows "results matching fewer words"; Browse API does not
+        # reliably do that for us, so keep filters strict and relax only the text.
+        fallbacks.append(" ".join(words[:2]))
+
+    seen = {query.strip().lower()}
+    unique = []
+    for fallback in fallbacks:
+        key = fallback.lower()
+        if key and key not in seen:
+            unique.append(fallback)
+            seen.add(key)
+    return unique
+
+
 async def search_active_listings(
     query: str,
     *,
@@ -79,26 +97,40 @@ async def search_active_listings(
         filters.append(f"price:[..{float(max_price)}]")
         filters.append("priceCurrency:USD")
 
-    params = {
-        "q": query.strip(),
-        "sort": "price",
-        "limit": min(max(max_results, 1), 100),
-    }
-    if filters:
-        params["filter"] = ",".join(filters)
     headers = {
         "Authorization": f"Bearer {token}",
         "X-EBAY-C-MARKETPLACE-ID": marketplace,
         "Content-Type": "application/json",
     }
 
-    async with httpx.AsyncClient(timeout=20) as client:
-        resp = await client.get(EBAY_BROWSE_URL, headers=headers, params=params)
+    async def fetch(search_query: str) -> tuple[httpx.Response, dict[str, Any]]:
+        params = {
+            "q": search_query,
+            "sort": "price",
+            "limit": min(max(max_results, 1), 100),
+        }
+        if filters:
+            params["filter"] = ",".join(filters)
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(EBAY_BROWSE_URL, headers=headers, params=params)
+        return resp, params
 
+    resp, params = await fetch(query.strip())
     if resp.status_code != 200:
         return {"error": f"ebay_api_{resp.status_code}", "details": resp.text[:500], "results": []}
 
     data = resp.json()
+    search_queries = [params["q"]]
+    if not data.get("itemSummaries"):
+        for fallback_query in _fallback_queries(query):
+            resp, params = await fetch(fallback_query)
+            search_queries.append(params["q"])
+            if resp.status_code != 200:
+                return {"error": f"ebay_api_{resp.status_code}", "details": resp.text[:500], "results": []}
+            data = resp.json()
+            if data.get("itemSummaries"):
+                break
+
     results = []
     for item in data.get("itemSummaries", []):
         price_obj = item.get("price") or {}
@@ -133,8 +165,10 @@ async def search_active_listings(
                 "country": location.get("country", ""),
                 "condition": item.get("condition", ""),
                 "buying_options": item.get("buyingOptions", []),
+                "match_query": params["q"],
+                "match_quality": "exact" if params["q"].lower() == query.strip().lower() else "partial",
                 "raw": item,
             }
         )
 
-    return {"count": len(results), "results": results}
+    return {"count": len(results), "results": results, "search_queries": search_queries}

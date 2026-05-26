@@ -338,6 +338,7 @@ function App() {
                   {item.shipping_price ? <span>dont port {money(item.shipping_price, item.currency)}</span> : <span>port inconnu</span>}
                   <span>{item.country || '??'}</span>
                   {item.buying_options?.length ? <span>{item.buying_options.includes('AUCTION') ? 'enchere' : item.buying_options.includes('FIXED_PRICE') ? 'achat immediat' : item.buying_options.join(', ')}</span> : null}
+                  {item.match_quality === 'partial' && item.match_query ? <span>match partiel: {item.match_query}</span> : null}
                   <span>{item.seller_username || 'vendeur inconnu'}</span>
                   {item.condition && <span>{item.condition}</span>}
                 </div>

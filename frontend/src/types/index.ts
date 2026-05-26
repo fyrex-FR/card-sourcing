@@ -27,6 +27,8 @@ export type SourcingItem = {
   country: string | null;
   condition: string | null;
   buying_options: string[] | null;
+  match_query: string | null;
+  match_quality: 'exact' | 'partial' | null;
   status: 'new' | 'watching' | 'ignored' | 'bought' | 'too_expensive';
   first_seen_at: string;
 };
