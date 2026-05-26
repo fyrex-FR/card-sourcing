@@ -14,6 +14,8 @@ type FormState = {
   country_filter: string;
 };
 
+type StatusFilter = 'all' | SourcingItem['status'];
+
 const initialForm: FormState = {
   name: '',
   query: '',
@@ -21,9 +23,26 @@ const initialForm: FormState = {
   country_filter: 'CN',
 };
 
+const statusLabels: Record<SourcingItem['status'], string> = {
+  new: 'nouveau',
+  watching: 'a suivre',
+  ignored: 'ignore',
+  bought: 'achete',
+  too_expensive: 'trop cher',
+};
+
 function money(value: number | null, currency = 'USD') {
   if (value === null || Number.isNaN(value)) return '-';
   return new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(value);
+}
+
+function dateLabel(value: string | null) {
+  if (!value) return '-';
+  return new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+}
+
+function totalPrice(item: SourcingItem) {
+  return Number(item.price ?? 0) + Number(item.shipping_price ?? 0);
 }
 
 function LoginView() {
@@ -62,6 +81,7 @@ function App() {
   const [items, setItems] = useState<SourcingItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
 
@@ -69,6 +89,25 @@ function App() {
     () => watchlists.find((watchlist) => watchlist.id === selectedId) ?? watchlists[0],
     [selectedId, watchlists],
   );
+
+  const visibleItems = useMemo(
+    () => (statusFilter === 'all' ? items : items.filter((item) => item.status === statusFilter)),
+    [items, statusFilter],
+  );
+
+  const stats = useMemo(() => {
+    const active = items.filter((item) => item.status === 'new' || item.status === 'watching');
+    const bought = items.filter((item) => item.status === 'bought');
+    const cheapest = active.reduce<SourcingItem | null>((best, item) => (!best || totalPrice(item) < totalPrice(best) ? item : best), null);
+    return {
+      total: items.length,
+      active: active.length,
+      bought: bought.length,
+      ignored: items.filter((item) => item.status === 'ignored' || item.status === 'too_expensive').length,
+      cheapest,
+      potentialSpend: active.reduce((sum, item) => sum + totalPrice(item), 0),
+    };
+  }, [items]);
 
   async function load() {
     setError('');
@@ -181,6 +220,11 @@ function App() {
               <small>{watchlist.query}</small>
             </button>
           ))}
+          {watchlists.length === 0 && (
+            <div className="empty-sidebar">
+              Cree une recherche, puis lance un scan pour remplir la collection.
+            </div>
+          )}
         </div>
       </aside>
 
@@ -204,21 +248,66 @@ function App() {
 
         {error && <div className="notice">{error}</div>}
 
+        {selectedWatchlist && (
+          <>
+            <div className="stat-grid">
+              <div className="stat">
+                <span>Total cartes</span>
+                <strong>{stats.total}</strong>
+              </div>
+              <div className="stat">
+                <span>A surveiller</span>
+                <strong>{stats.active}</strong>
+              </div>
+              <div className="stat">
+                <span>Achetees</span>
+                <strong>{stats.bought}</strong>
+              </div>
+              <div className="stat">
+                <span>Budget actif</span>
+                <strong>{money(stats.potentialSpend, stats.cheapest?.currency ?? 'USD')}</strong>
+              </div>
+            </div>
+
+            <div className="insight-strip">
+              <div>
+                <span>Meilleure entree</span>
+                <strong>{stats.cheapest ? `${money(totalPrice(stats.cheapest), stats.cheapest.currency)} - ${stats.cheapest.title}` : 'Aucune carte active'}</strong>
+              </div>
+              <span>Dernier scan : {dateLabel(selectedWatchlist.last_scan_at)}</span>
+            </div>
+
+            <div className="filter-row">
+              {(['all', 'new', 'watching', 'bought', 'too_expensive', 'ignored'] as const).map((status) => (
+                <button
+                  key={status}
+                  className={statusFilter === status ? 'filter selected' : 'filter'}
+                  onClick={() => setStatusFilter(status)}
+                >
+                  {status === 'all' ? 'tout' : statusLabels[status]}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
         <div className="items-grid">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <article className="item-card" key={item.id}>
               <div className="thumb">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={28} />}</div>
               <div className="item-body">
                 <div className="item-title">{item.title}</div>
                 <div className="meta">
-                  <strong>{money(item.price, item.currency)}</strong>
+                  <strong>{money(totalPrice(item), item.currency)}</strong>
+                  {item.shipping_price ? <span>dont port {money(item.shipping_price, item.currency)}</span> : <span>port inconnu</span>}
                   <span>{item.country || '??'}</span>
                   <span>{item.seller_username || 'vendeur inconnu'}</span>
+                  {item.condition && <span>{item.condition}</span>}
                 </div>
                 <div className="status-row">
-                  {(['watching', 'ignored', 'bought', 'too_expensive'] as const).map((status) => (
+                  {(['new', 'watching', 'bought', 'too_expensive', 'ignored'] as const).map((status) => (
                     <button key={status} className={item.status === status ? 'chip selected' : 'chip'} onClick={() => updateStatus(item.id, status)}>
-                      {status === 'too_expensive' ? 'trop cher' : status}
+                      {statusLabels[status]}
                     </button>
                   ))}
                 </div>
@@ -227,6 +316,13 @@ function App() {
             </article>
           ))}
         </div>
+
+        {selectedWatchlist && visibleItems.length === 0 && (
+          <div className="empty-state">
+            <strong>Aucune carte dans cette vue.</strong>
+            <span>{items.length === 0 ? 'Lance un scan pour importer les resultats eBay.' : 'Change de filtre ou marque des cartes dans ce statut.'}</span>
+          </div>
+        )}
       </section>
     </main>
   );
