@@ -118,7 +118,7 @@ async def delete_watchlist(watchlist_id: str, user: dict = Depends(current_user)
 
 @router.get("/items")
 async def list_items(watchlist_id: str | None = None, status: str | None = None, user: dict = Depends(current_user)):
-    params = {"user_id": f"eq.{_user_id(user)}", "order": "first_seen_at.desc", "limit": "200"}
+    params = {"user_id": f"eq.{_user_id(user)}", "order": "first_seen_at.desc", "limit": "1000"}
     if watchlist_id:
         params["watchlist_id"] = f"eq.{watchlist_id}"
     if status:

@@ -163,7 +163,7 @@ function LoginView() {
 function App() {
   const { session, loading } = useAuth();
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
-  const [items, setItems] = useState<SourcingItem[]>([]);
+  const [allItems, setAllItems] = useState<SourcingItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -186,6 +186,18 @@ function App() {
   const selectedWatchlist = useMemo(
     () => watchlists.find((watchlist) => watchlist.id === selectedId) ?? watchlists[0],
     [selectedId, watchlists],
+  );
+
+  const watchlistById = useMemo(() => {
+    const map = new Map<string, Watchlist>();
+    for (const watchlist of watchlists) map.set(watchlist.id, watchlist);
+    return map;
+  }, [watchlists]);
+
+  // items = vue par watchlist (axe de recherche). allItems = vue globale (vendeurs, etc.)
+  const items = useMemo(
+    () => (selectedWatchlist ? allItems.filter((item) => item.watchlist_id === selectedWatchlist.id) : []),
+    [allItems, selectedWatchlist],
   );
 
   const visibleItems = useMemo(() => {
@@ -221,9 +233,10 @@ function App() {
     };
   }, [items, now]);
 
+  // sellerGroups est GLOBAL : agrege les cartes par vendeur sur toutes les watchlists.
   const sellerGroups = useMemo(() => {
     const groups = new Map<string, SourcingItem[]>();
-    for (const item of items) {
+    for (const item of allItems) {
       if (!item.seller_username || !isActiveItem(item)) continue;
       const bucket = auctionBucket(item.auction_end_at, now);
       if (bucket === 'ended') continue;
@@ -241,10 +254,12 @@ function App() {
           const bucket = auctionBucket(item.auction_end_at, now);
           return bucket === 'today' || bucket === 'tomorrow' || bucket === 'week';
         });
+        const watchlistIds = new Set(sellerItems.map((item) => item.watchlist_id));
         return {
           seller,
           items: sellerItems,
           count: sellerItems.length,
+          watchlistCount: watchlistIds.size,
           sevenDayCount: sevenDayItems.length,
           total: sellerItems.reduce((sum, item) => sum + totalPrice(item), 0),
           nextEnding: endingSoon,
@@ -256,8 +271,8 @@ function App() {
         if (left.sevenDayCount !== right.sevenDayCount) return right.sevenDayCount - left.sevenDayCount;
         return right.total - left.total;
       })
-      .slice(0, 8);
-  }, [favoriteSellers, items, now]);
+      .slice(0, 12);
+  }, [allItems, favoriteSellers, now]);
 
   const actionBoard = useMemo(() => {
     const activeItems = items.filter((item) => isActiveItem(item) && auctionBucket(item.auction_end_at, now) !== 'ended');
@@ -312,16 +327,16 @@ function App() {
 
   async function load() {
     setError('');
-    const [nextWatchlists, favorites] = await Promise.all([
+    const [nextWatchlists, favorites, nextItems] = await Promise.all([
       apiFetch<Watchlist[]>('/watchlists'),
       apiFetch<SellerFavorite[]>('/seller-favorites').catch(() => [] as SellerFavorite[]),
+      apiFetch<SourcingItem[]>('/items'),
     ]);
     setWatchlists(nextWatchlists);
     setFavoriteSellers(favorites.map((favorite) => favorite.seller_username));
     const active = selectedId ?? nextWatchlists[0]?.id;
     setSelectedId(active ?? null);
-    const suffix = active ? `?watchlist_id=${active}` : '';
-    setItems(await apiFetch<SourcingItem[]>(`/items${suffix}`));
+    setAllItems(nextItems);
   }
 
   useEffect(() => {
@@ -333,13 +348,6 @@ function App() {
     const timer = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    if (!session || !selectedId) return;
-    apiFetch<SourcingItem[]>(`/items?watchlist_id=${selectedId}`)
-      .then(setItems)
-      .catch((err) => setError(err.message));
-  }, [selectedId, session]);
 
   async function createWatchlist(event: React.FormEvent) {
     event.preventDefault();
@@ -397,13 +405,13 @@ function App() {
       method: 'PATCH',
       body: JSON.stringify({ status }),
     });
-    setItems((current) => current.map((item) => (item.id === itemId ? updated : item)));
+    setAllItems((current) => current.map((item) => (item.id === itemId ? updated : item)));
   }
 
   async function removeWatchlist(id: string) {
     await apiFetch(`/watchlists/${id}`, { method: 'DELETE' });
     setWatchlists((current) => current.filter((watchlist) => watchlist.id !== id));
-    setItems([]);
+    setAllItems((current) => current.filter((item) => item.watchlist_id !== id));
     setSelectedId(null);
   }
 
@@ -498,7 +506,7 @@ function App() {
         method: 'PATCH',
         body: JSON.stringify({ status: 'bid_planned', max_bid }),
       });
-      setItems((list) => list.map((entry) => (entry.id === item.id ? updated : entry)));
+      setAllItems((list) => list.map((entry) => (entry.id === item.id ? updated : entry)));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur planification');
     }
@@ -513,23 +521,23 @@ function App() {
         method: 'PATCH',
         body: JSON.stringify({ note }),
       });
-      setItems((list) => list.map((entry) => (entry.id === item.id ? updated : entry)));
+      setAllItems((list) => list.map((entry) => (entry.id === item.id ? updated : entry)));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur note');
     }
   }
 
-  // Items locaux pour le vendeur ouvert (issus du scan courant). Toujours dispo, zero appel API.
+  // Items locaux pour le vendeur ouvert : agrege TOUTES les watchlists (vue globale).
   const sellerLocalItems = useMemo(() => {
     if (!sellerPanel) return [] as SourcingItem[];
-    return items
+    return allItems
       .filter((item) => item.seller_username === sellerPanel.seller)
       .sort((a, b) => {
         const aEnd = a.auction_end_at ? new Date(a.auction_end_at).getTime() : Number.POSITIVE_INFINITY;
         const bEnd = b.auction_end_at ? new Date(b.auction_end_at).getTime() : Number.POSITIVE_INFINITY;
         return aEnd - bEnd;
       });
-  }, [items, sellerPanel]);
+  }, [allItems, sellerPanel]);
 
   // Items elargis filtres pour ne pas dupliquer ceux deja en local (par external_id)
   const sellerExpandedItems = useMemo(() => {
@@ -699,6 +707,7 @@ function App() {
                   </div>
                   <div className="seller-group-stats">
                     <span>{group.count} carte{group.count > 1 ? 's' : ''}</span>
+                    {group.watchlistCount > 1 && <span>{group.watchlistCount} recherches</span>}
                     <span>{group.sevenDayCount} fin J+7</span>
                     <strong>{money(group.total, group.items[0]?.currency ?? 'USD')}</strong>
                   </div>
@@ -746,15 +755,20 @@ function App() {
                   <Layers size={16} />
                   <div>
                     <span>Panier</span>
-                    <strong>Vendeurs a concentrer</strong>
+                    <strong>Vendeurs a concentrer (toutes recherches)</strong>
                   </div>
                 </div>
                 {actionBoard.sellerMissions.length === 0 && <div className="lane-empty">Pas encore de vendeur assez dense.</div>}
                 {actionBoard.sellerMissions.map((group) => (
-                  <article className="action-item seller-mission" key={group.seller}>
+                  <article className={group.favorite ? 'action-item seller-mission favorite' : 'action-item seller-mission'} key={group.seller}>
                     <div>
                       <strong>{group.seller}</strong>
-                      <span>{group.count} cartes · {group.sevenDayCount} fins J+7 · {money(group.total, group.items[0]?.currency ?? 'USD')}</span>
+                      <span>
+                        {group.count} carte{group.count > 1 ? 's' : ''}
+                        {group.watchlistCount > 1 ? ` · ${group.watchlistCount} recherches` : ''}
+                        {group.sevenDayCount > 0 ? ` · ${group.sevenDayCount} fins J+7` : ''}
+                        {' · '}{money(group.total, group.items[0]?.currency ?? 'USD')}
+                      </span>
                     </div>
                     <button onClick={() => openSellerPanel(group.seller)}>Explorer</button>
                   </article>
@@ -914,30 +928,41 @@ function App() {
           {sellerLocalItems.length > 0 && (
             <>
               <div className="seller-section-title">
-                <strong>Cartes de cette recherche ({sellerLocalItems.length})</strong>
+                <strong>Mes cartes chez ce vendeur ({sellerLocalItems.length})</strong>
                 <a href={`https://www.ebay.com/sch/i.html?_ssn=${encodeURIComponent(sellerPanel.seller)}&LH_Auction=1`} target="_blank" rel="noreferrer">
                   Toutes ses ventes eBay <ExternalLink size={12} />
                 </a>
               </div>
               <div className="seller-items">
-                {sellerLocalItems.map((item) => (
-                  <article className="seller-item" key={item.id}>
-                    <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
-                    <div>
-                      <strong>{item.title}</strong>
-                      <div className="meta">
-                        <span>{money(totalPrice(item), item.currency)}</span>
-                        {item.auction_end_at && (
-                          <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
-                            <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
-                          </span>
-                        )}
-                        {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} bid{item.bid_count > 1 ? 's' : ''}</span> : null}
+                {sellerLocalItems.map((item) => {
+                  const sourceWatchlist = watchlistById.get(item.watchlist_id);
+                  return (
+                    <article className="seller-item" key={item.id}>
+                      <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
+                      <div>
+                        <strong>{item.title}</strong>
+                        <div className="meta">
+                          <span>{money(totalPrice(item), item.currency)}</span>
+                          {item.auction_end_at && (
+                            <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
+                              <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
+                            </span>
+                          )}
+                          {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} bid{item.bid_count > 1 ? 's' : ''}</span> : null}
+                          {sourceWatchlist && (
+                            <span className="origin-tag" title={sourceWatchlist.query}>
+                              via {sourceWatchlist.name}
+                            </span>
+                          )}
+                          {item.status !== 'new' && (
+                            <span className={`status-tag status-${item.status}`}>{statusLabels[item.status]}</span>
+                          )}
+                        </div>
+                        <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
                       </div>
-                      <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
             </>
           )}
@@ -990,7 +1015,7 @@ function App() {
 
           {sellerLocalItems.length === 0 && sellerExpandedItems.length === 0 && !sellerPanel.expandedLoading && (
             <div className="empty-state compact">
-              Aucune carte de ce vendeur dans la recherche courante.<br />
+              Aucune carte de ce vendeur dans tes recherches.<br />
               Lance une recherche eBay au-dessus pour voir ses ventes.
             </div>
           )}

@@ -1285,3 +1285,52 @@ a {
 .app-shell.seller-open .items-grid {
   grid-template-columns: 1fr;
 }
+
+.origin-tag {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #21252a;
+  color: #a9aaa7;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.status-tag {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.status-tag.status-watching {
+  background: rgb(244 209 130 / 0.16);
+  color: #f4d182;
+  border-color: rgb(244 209 130 / 0.3);
+}
+
+.status-tag.status-bid_planned {
+  background: rgb(90 115 199 / 0.18);
+  color: #a8b8e0;
+  border-color: rgb(90 115 199 / 0.4);
+}
+
+.status-tag.status-bought {
+  background: rgb(82 165 116 / 0.16);
+  color: #7fd49a;
+  border-color: rgb(82 165 116 / 0.3);
+}
+
+.status-tag.status-too_expensive,
+.status-tag.status-ignored {
+  background: #21252a;
+  color: #6f7277;
+}
+
+.action-item.seller-mission.favorite {
+  border-color: #f4d182;
+  background: linear-gradient(180deg, rgb(244 209 130 / 0.06), transparent);
+}
