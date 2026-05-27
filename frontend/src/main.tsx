@@ -1102,16 +1102,34 @@ function App() {
                 </div>
               </header>
 
-              <div className="seller-view-summary">
-                <div className="shipping-edit inline">
-                  <label htmlFor={`shipping-${sellerPanel.seller}`}>Frais de port estimes (groupes)</label>
-                  <div className="shipping-edit-row">
+              <div className="seller-toolbar">
+                <form
+                  className="seller-search prominent"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    expandSellerSearch();
+                  }}
+                >
+                  <Search size={16} />
+                  <input
+                    value={sellerPanel.expandedQuery}
+                    onChange={(event) => setSellerPanel({ ...sellerPanel, expandedQuery: event.target.value })}
+                    placeholder={`Chercher dans les ventes de ${sellerPanel.seller}...`}
+                    autoFocus
+                  />
+                  <button disabled={sellerPanel.expandedLoading}>
+                    {sellerPanel.expandedLoading ? '...' : 'Chercher'}
+                  </button>
+                </form>
+                <div className="seller-toolbar-aside">
+                  <div className="shipping-edit compact">
+                    <label htmlFor={`shipping-${sellerPanel.seller}`}>Port</label>
                     <input
                       id={`shipping-${sellerPanel.seller}`}
                       type="number"
                       step="0.01"
                       min="0"
-                      placeholder={`defaut ${DEFAULT_SHIPPING}`}
+                      placeholder={`${DEFAULT_SHIPPING}`}
                       defaultValue={shippingValue}
                       onBlur={(event) => {
                         const raw = event.target.value.trim();
@@ -1122,30 +1140,51 @@ function App() {
                     />
                     <span className="shipping-currency">{basket?.currency ?? 'USD'}</span>
                   </div>
-                </div>
-                {basket && (
-                  <div className="basket-money">
-                    <div className="basket-row">
-                      <span>Cartes au panier</span>
-                      <strong>{money(basket.cardsTotal, basket.currency)}</strong>
-                    </div>
-                    <div className="basket-row">
-                      <span>+ port estime</span>
-                      <strong>{money(basket.groupedShipping, basket.currency)}</strong>
-                    </div>
-                    <div className="basket-row total">
-                      <span>Total panier</span>
+                  {basket && (
+                    <div className="basket-pill">
+                      <ShoppingBasket size={13} />
+                      <span>{basket.count} carte{basket.count > 1 ? 's' : ''}</span>
                       <strong>{money(basket.totalGrouped, basket.currency)}</strong>
+                      {basket.savings > 0 && (
+                        <span className="basket-pill-savings">-{money(basket.savings, basket.currency)}</span>
+                      )}
                     </div>
-                    {basket.savings > 0 && (
-                      <div className="basket-row savings">
-                        <span>Economie vs achats separes</span>
-                        <strong>-{money(basket.savings, basket.currency)}</strong>
-                      </div>
-                    )}
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
+
+              {sellerPanel.expandedError && <div className="notice">{sellerPanel.expandedError}</div>}
+              {sellerPanel.expandedLoading && <div className="empty-state compact">Recherche eBay...</div>}
+
+              {sellerExpandedItems.length > 0 && (
+                <section className="seller-section">
+                  <div className="seller-section-head">
+                    <Search size={16} />
+                    <h2>Resultats eBay ({sellerExpandedItems.length})</h2>
+                    <span className="seller-section-tag">cartes pas encore scannees</span>
+                  </div>
+                  <div className="seller-items grid">
+                    {sellerExpandedItems.map((item) => (
+                      <article className="seller-item expanded" key={item.external_id ?? item.url}>
+                        <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
+                        <div>
+                          <strong>{item.title}</strong>
+                          <div className="meta">
+                            <span>{money(totalPrice(item), item.currency)}</span>
+                            {item.auction_end_at && (
+                              <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
+                                <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
+                              </span>
+                            )}
+                            {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} bid{item.bid_count > 1 ? 's' : ''}</span> : null}
+                          </div>
+                          <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               {basketItems.length > 0 && (
                 <section className="seller-section">
@@ -1156,6 +1195,28 @@ function App() {
                       <span className="seller-section-tag">{basket.plannedBids} a encherir</span>
                     )}
                   </div>
+                  {basket && (
+                    <div className="basket-money">
+                      <div className="basket-row">
+                        <span>Cartes au panier</span>
+                        <strong>{money(basket.cardsTotal, basket.currency)}</strong>
+                      </div>
+                      <div className="basket-row">
+                        <span>+ port estime</span>
+                        <strong>{money(basket.groupedShipping, basket.currency)}</strong>
+                      </div>
+                      <div className="basket-row total">
+                        <span>Total panier</span>
+                        <strong>{money(basket.totalGrouped, basket.currency)}</strong>
+                      </div>
+                      {basket.savings > 0 && (
+                        <div className="basket-row savings">
+                          <span>Economie vs achats separes</span>
+                          <strong>-{money(basket.savings, basket.currency)}</strong>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="items-grid">
                     {basketItems.map((item) => (
                       <OpportunityCard
@@ -1195,60 +1256,10 @@ function App() {
                 </section>
               )}
 
-              <section className="seller-section">
-                <div className="seller-section-head">
-                  <Search size={16} />
-                  <h2>Elargir sur eBay</h2>
-                  <span className="seller-section-tag">cartes pas encore scannees</span>
-                </div>
-                <form
-                  className="seller-search inline"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    expandSellerSearch();
-                  }}
-                >
-                  <input
-                    value={sellerPanel.expandedQuery}
-                    onChange={(event) => setSellerPanel({ ...sellerPanel, expandedQuery: event.target.value })}
-                    placeholder='ex. "card", "duncan", "auto"'
-                  />
-                  <button disabled={sellerPanel.expandedLoading}>
-                    <Search size={15} /> {sellerPanel.expandedLoading ? '...' : 'Chercher'}
-                  </button>
-                </form>
-
-                {sellerPanel.expandedError && <div className="notice">{sellerPanel.expandedError}</div>}
-                {sellerPanel.expandedLoading && <div className="empty-state compact">Recherche eBay...</div>}
-
-                {sellerExpandedItems.length > 0 && (
-                  <div className="seller-items grid">
-                    {sellerExpandedItems.map((item) => (
-                      <article className="seller-item expanded" key={item.external_id ?? item.url}>
-                        <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
-                        <div>
-                          <strong>{item.title}</strong>
-                          <div className="meta">
-                            <span>{money(totalPrice(item), item.currency)}</span>
-                            {item.auction_end_at && (
-                              <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
-                                <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
-                              </span>
-                            )}
-                            {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} bid{item.bid_count > 1 ? 's' : ''}</span> : null}
-                          </div>
-                          <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </section>
-
               {basketItems.length === 0 && otherItems.length === 0 && sellerExpandedItems.length === 0 && !sellerPanel.expandedLoading && (
                 <div className="empty-state">
                   <strong>Aucune carte de ce vendeur dans tes scans.</strong>
-                  <span>Utilise "Elargir sur eBay" au-dessus pour voir ses ventes.</span>
+                  <span>Tape une recherche au-dessus pour explorer ses ventes.</span>
                 </div>
               )}
             </div>

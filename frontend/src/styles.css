@@ -1947,3 +1947,132 @@ a {
   border-radius: 8px;
   background: #171a1d;
 }
+
+/* ===== Seller toolbar : recherche prominente + port + pill panier ===== */
+.seller-toolbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #292d31;
+  border-radius: 10px;
+  background: #15181b;
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+}
+
+@media (max-width: 760px) {
+  .seller-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
+.seller-search.prominent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: #0f1113;
+  border: 1px solid #2d3138;
+  border-radius: 8px;
+  height: 42px;
+}
+
+.seller-search.prominent svg {
+  color: #6f7277;
+  flex-shrink: 0;
+}
+
+.seller-search.prominent input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  color: #f4f1eb;
+  font-size: 14px;
+  outline: none;
+}
+
+.seller-search.prominent input::placeholder {
+  color: #6f7277;
+}
+
+.seller-search.prominent button {
+  background: #f4d182;
+  color: #15110a;
+  border: 0;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.seller-search.prominent button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.seller-toolbar-aside {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.shipping-edit.compact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid #2d3138;
+  border-radius: 8px;
+  background: #0f1113;
+}
+
+.shipping-edit.compact label {
+  font-size: 11px;
+  color: #a9aaa7;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.shipping-edit.compact input {
+  width: 64px;
+  background: transparent;
+  border: 0;
+  color: #f4f1eb;
+  padding: 0;
+  font-size: 13px;
+  outline: none;
+  text-align: right;
+}
+
+.basket-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgb(127 212 154 / 0.14);
+  color: #d8d6cf;
+  font-size: 12px;
+  border: 1px solid rgb(127 212 154 / 0.3);
+}
+
+.basket-pill svg {
+  color: #7fd49a;
+}
+
+.basket-pill strong {
+  color: #f4f1eb;
+  font-size: 13px;
+}
+
+.basket-pill-savings {
+  color: #7fd49a;
+  font-weight: 600;
+}
