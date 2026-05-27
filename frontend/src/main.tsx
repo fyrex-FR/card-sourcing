@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CalendarDays, Clock, ExternalLink, Eye, Flame, Layers, RefreshCw, Search, Star, Store, Target, Trash2 } from 'lucide-react';
+import { CalendarDays, Clock, ExternalLink, Eye, Flame, Layers, ListFilter, Menu, RefreshCw, Search, Star, Store, Target, Trash2, X } from 'lucide-react';
 import { apiFetch } from './api/client';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
@@ -17,6 +17,7 @@ type FormState = {
 
 type StatusFilter = 'all' | SourcingItem['status'];
 type TimeFilter = 'all' | 'today' | 'tomorrow' | 'week' | 'ended' | 'undated';
+type MobileView = 'action' | 'sellers' | 'cards';
 
 const initialForm: FormState = {
   name: '',
@@ -164,6 +165,8 @@ function App() {
   const [form, setForm] = useState<FormState>(initialForm);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+  const [mobileView, setMobileView] = useState<MobileView>('action');
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [favoriteSellers, setFavoriteSellers] = useState<string[]>(() => {
     try {
       return JSON.parse(window.localStorage.getItem('card-sourcing:favorites') ?? '[]');
@@ -447,15 +450,20 @@ function App() {
 
   return (
     <main className={sellerPanel ? 'app-shell seller-open' : 'app-shell'}>
-      <aside className="sidebar">
+      <aside className={mobileSearchOpen ? 'sidebar mobile-open' : 'sidebar'}>
         <div className="topbar">
           <div>
             <strong>Card Sourcing</strong>
             <span>{session.user.email}</span>
           </div>
-          <button className="icon-button" onClick={() => supabase.auth.signOut()} title="Deconnexion">
-            <ExternalLink size={17} />
-          </button>
+          <div className="topbar-actions">
+            <button className="icon-button mobile-close" onClick={() => setMobileSearchOpen(false)} title="Fermer">
+              <X size={17} />
+            </button>
+            <button className="icon-button" onClick={() => supabase.auth.signOut()} title="Deconnexion">
+              <ExternalLink size={17} />
+            </button>
+          </div>
         </div>
 
         <form className="watch-form" onSubmit={createWatchlist}>
@@ -485,7 +493,10 @@ function App() {
             <button
               key={watchlist.id}
               className={watchlist.id === selectedWatchlist?.id ? 'watchlist active' : 'watchlist'}
-              onClick={() => setSelectedId(watchlist.id)}
+              onClick={() => {
+                setSelectedId(watchlist.id);
+                setMobileSearchOpen(false);
+              }}
             >
               <span>{watchlist.name}</span>
               <small>{watchlist.query}</small>
@@ -499,7 +510,18 @@ function App() {
         </div>
       </aside>
 
-      <section className="content">
+      <section className={`content mobile-view-${mobileView}`}>
+        <div className="mobile-command">
+          <button className="ghost" onClick={() => setMobileSearchOpen(true)}>
+            <Menu size={17} /> Recherches
+          </button>
+          {selectedWatchlist && (
+            <button onClick={() => scan(selectedWatchlist.id)} disabled={busy === `scan:${selectedWatchlist.id}`}>
+              <RefreshCw size={16} /> Scanner
+            </button>
+          )}
+        </div>
+
         <header className="content-header">
           <div>
             <h1>{selectedWatchlist?.name ?? 'Aucune recherche'}</h1>
@@ -522,6 +544,77 @@ function App() {
 
         {selectedWatchlist && (
           <>
+            <nav className="mobile-tabs" aria-label="Vue mobile">
+              {([
+                ['action', 'A acheter'],
+                ['sellers', 'Vendeurs'],
+                ['cards', 'Toutes'],
+              ] as const).map(([view, label]) => (
+                <button key={view} className={mobileView === view ? 'selected' : ''} onClick={() => setMobileView(view)}>
+                  {label}
+                </button>
+              ))}
+            </nav>
+
+            <section className={`mobile-focus ${mobileView === 'action' ? 'active' : ''}`}>
+              <div className="mobile-section-title">
+                <strong>Priorite maintenant</strong>
+                <span>{actionBoard.urgent.length || visibleItems.length} carte{(actionBoard.urgent.length || visibleItems.length) > 1 ? 's' : ''}</span>
+              </div>
+              {(actionBoard.urgent.length ? actionBoard.urgent.map(({ item }) => item) : visibleItems.filter(isActiveItem).slice(0, 8)).map((item) => (
+                <article className="mobile-deal" key={item.id}>
+                  <div className="mobile-deal-main">
+                    <strong>{money(totalPrice(item), item.currency)}</strong>
+                    {item.auction_end_at && (
+                      <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
+                        <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
+                      </span>
+                    )}
+                  </div>
+                  <p>{item.title}</p>
+                  <div className="mobile-deal-meta">
+                    <span>{item.seller_username ?? 'vendeur inconnu'}</span>
+                    {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} enchere{item.bid_count > 1 ? 's' : ''}</span> : <span>encheres ?</span>}
+                  </div>
+                  <div className="mobile-deal-actions">
+                    <button onClick={() => updateStatus(item.id, 'watching')}>Suivre</button>
+                    <button onClick={() => updateStatus(item.id, 'ignored')} className="ghost">Ignorer</button>
+                    <a href={item.url} target="_blank" rel="noreferrer">eBay</a>
+                  </div>
+                </article>
+              ))}
+              {visibleItems.length === 0 && <div className="empty-state compact">Lance un scan pour remplir la file d'action.</div>}
+            </section>
+
+            <section className={`mobile-focus ${mobileView === 'sellers' ? 'active' : ''}`}>
+              <div className="mobile-section-title">
+                <strong>Vendeurs a grouper</strong>
+                <span>{sellerGroups.length} actif{sellerGroups.length > 1 ? 's' : ''}</span>
+              </div>
+              {sellerGroups.map((group) => (
+                <article className={group.favorite ? 'seller-group favorite' : 'seller-group'} key={group.seller}>
+                  <div className="seller-group-head">
+                    <button className="seller-name" onClick={() => openSellerPanel(group.seller, selectedWatchlist.query)}>
+                      <Store size={15} /> {group.seller}
+                    </button>
+                    <button className={group.favorite ? 'star-button selected' : 'star-button'} onClick={() => toggleFavoriteSeller(group.seller)} title="Favori vendeur">
+                      <Star size={15} />
+                    </button>
+                  </div>
+                  <div className="seller-group-stats">
+                    <span>{group.count} carte{group.count > 1 ? 's' : ''}</span>
+                    <span>{group.sevenDayCount} fin J+7</span>
+                    <strong>{money(group.total, group.items[0]?.currency ?? 'USD')}</strong>
+                  </div>
+                </article>
+              ))}
+            </section>
+
+            <section className={`mobile-focus ${mobileView === 'cards' ? 'active' : ''}`}>
+              <div className="mobile-filter-title"><ListFilter size={15} /> Filtres</div>
+            </section>
+
+            <div className="desktop-stack">
             <div className="stat-grid">
               <div className="stat">
                 <span>Total cartes</span>
@@ -655,7 +748,9 @@ function App() {
               </section>
             )}
 
-            <div className="filter-row">
+            </div>
+
+            <div className="filter-row cards-filter-row">
               {(['all', 'new', 'watching', 'bought', 'too_expensive', 'ignored'] as const).map((status) => (
                 <button
                   key={status}
@@ -667,7 +762,7 @@ function App() {
               ))}
             </div>
 
-            <div className="filter-row timeline-filters">
+            <div className="filter-row timeline-filters cards-filter-row">
               {(['all', 'today', 'tomorrow', 'week', 'ended', 'undated'] as const).map((filter) => (
                 <button
                   key={filter}
@@ -681,7 +776,7 @@ function App() {
           </>
         )}
 
-        <div className="items-grid">
+        <div className={mobileView === 'cards' ? 'items-grid mobile-cards-active' : 'items-grid'}>
           {visibleItems.map((item) => (
             <article className="item-card" key={item.id}>
               <div className="thumb">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={28} />}</div>
