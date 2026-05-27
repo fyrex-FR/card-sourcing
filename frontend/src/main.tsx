@@ -173,6 +173,8 @@ function App() {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [mobileView, setMobileView] = useState<MobileView>('action');
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [favoriteSellers, setFavoriteSellers] = useState<SellerFavorite[]>([]);
 
   const favoriteSellerUsernames = useMemo(
@@ -722,28 +724,46 @@ function App() {
           </div>
         </div>
 
-        <form className="watch-form" onSubmit={createWatchlist}>
-          <input placeholder="Nom" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
-          <input placeholder="Recherche eBay" value={form.query} onChange={(event) => setForm({ ...form, query: event.target.value })} required />
-          <div className="form-row">
-            <input placeholder="Prix max" type="number" min="0" step="0.01" value={form.max_price} onChange={(event) => setForm({ ...form, max_price: event.target.value })} />
-            <input placeholder="Pays" value={form.country_filter} onChange={(event) => setForm({ ...form, country_filter: event.target.value })} />
-          </div>
-          <div className="segmented" aria-label="Format eBay">
-            {(['AUCTION', 'FIXED_PRICE', 'ALL'] as const).map((option) => (
-              <button
-                key={option}
-                type="button"
-                className={form.buying_option === option ? 'selected' : ''}
-                onClick={() => setForm({ ...form, buying_option: option })}
-              >
-                {buyingOptionLabels[option]}
-              </button>
-            ))}
-          </div>
-          <button disabled={busy === 'create'}><Search size={16} /> Ajouter</button>
-        </form>
+        <button
+          type="button"
+          className={createOpen ? 'sidebar-add open' : 'sidebar-add'}
+          onClick={() => setCreateOpen((value) => !value)}
+        >
+          {createOpen ? <X size={14} /> : <Search size={14} />}
+          {createOpen ? 'Annuler' : 'Nouvelle recherche'}
+        </button>
 
+        {createOpen && (
+          <form
+            className="watch-form"
+            onSubmit={async (event) => {
+              await createWatchlist(event);
+              setCreateOpen(false);
+            }}
+          >
+            <input placeholder="Nom" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+            <input placeholder="Recherche eBay" value={form.query} onChange={(event) => setForm({ ...form, query: event.target.value })} required />
+            <div className="form-row">
+              <input placeholder="Prix max" type="number" min="0" step="0.01" value={form.max_price} onChange={(event) => setForm({ ...form, max_price: event.target.value })} />
+              <input placeholder="Pays" value={form.country_filter} onChange={(event) => setForm({ ...form, country_filter: event.target.value })} />
+            </div>
+            <div className="segmented" aria-label="Format eBay">
+              {(['AUCTION', 'FIXED_PRICE', 'ALL'] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className={form.buying_option === option ? 'selected' : ''}
+                  onClick={() => setForm({ ...form, buying_option: option })}
+                >
+                  {buyingOptionLabels[option]}
+                </button>
+              ))}
+            </div>
+            <button disabled={busy === 'create'}>Creer</button>
+          </form>
+        )}
+
+        <div className="sidebar-section-title">Recherches</div>
         <div className="watchlist-list">
           {watchlists.map((watchlist) => (
             <button
@@ -934,158 +954,92 @@ function App() {
               </section>
             )}
 
-            <section className="action-board">
-              <div className="action-lane priority">
-                <div className="lane-title">
-                  <Flame size={16} />
-                  <div>
-                    <span>Maintenant</span>
-                    <strong>A trancher avant la fin</strong>
-                  </div>
+            {actionBoard.sellerMissions.length > 0 && (
+              <section className="suggestions-strip">
+                <div className="suggestions-title">
+                  <Layers size={14} />
+                  <span>Vendeurs prometteurs (a explorer pour grouper)</span>
                 </div>
-                {actionBoard.urgent.length === 0 && <div className="lane-empty">Rien d'urgent dans les 48h.</div>}
-                {actionBoard.urgent.map(({ item }) => (
-                  <OpportunityCard
-                    key={item.id}
-                    item={item}
-                    ctx={signalCtxFor(item)}
-                    variant="compact"
-                    onAddToBasket={(target) => toggleBasket(target)}
-                    onIgnore={(target) => updateStatus(target.id, 'ignored')}
-                    onPlanBid={planBid}
-                    onOpenSeller={(seller) => openSellerPanel(seller)}
-                  />
-                ))}
-              </div>
-
-              <div className="action-lane">
-                <div className="lane-title">
-                  <Layers size={16} />
-                  <div>
-                    <span>Vendeurs prometteurs</span>
-                    <strong>A explorer pour grouper les achats</strong>
-                  </div>
-                </div>
-                {actionBoard.sellerMissions.length === 0 && <div className="lane-empty">Pas encore de vendeur assez dense.</div>}
-                {actionBoard.sellerMissions.map((group) => (
-                  <article className={group.favorite ? 'action-item seller-mission favorite' : 'action-item seller-mission'} key={group.seller}>
-                    <div>
+                <div className="suggestions-list">
+                  {actionBoard.sellerMissions.map((group) => (
+                    <button
+                      key={group.seller}
+                      className={group.favorite ? 'suggestion-chip favorite' : 'suggestion-chip'}
+                      onClick={() => openSellerPanel(group.seller)}
+                    >
                       <strong>{group.seller}</strong>
                       <span>
                         {group.count} carte{group.count > 1 ? 's' : ''}
-                        {group.watchlistCount > 1 ? ` · ${group.watchlistCount} recherches` : ''}
-                        {group.sevenDayCount > 0 ? ` · ${group.sevenDayCount} fins J+7` : ''}
+                        {group.watchlistCount > 1 ? ` · ${group.watchlistCount} rech.` : ''}
                         {' · '}{money(group.total, group.items[0]?.currency ?? 'USD')}
                       </span>
-                    </div>
-                    <button onClick={() => openSellerPanel(group.seller)}>Explorer</button>
-                  </article>
-                ))}
-              </div>
-
-              <div className="action-lane">
-                <div className="lane-title">
-                  <Target size={16} />
-                  <div>
-                    <span>Menage</span>
-                    <strong>A sortir du radar</strong>
-                  </div>
+                    </button>
+                  ))}
                 </div>
-                {actionBoard.clean.length === 0 && <div className="lane-empty">Rien a nettoyer.</div>}
-                {actionBoard.clean.map((item) => (
-                  <article className="action-item" key={item.id}>
-                    <div>
-                      <strong>{item.title}</strong>
-                      <span>{auctionBucket(item.auction_end_at, now) === 'ended' ? 'terminee' : !item.image_url ? 'sans image' : 'vendeur inconnu'}</span>
-                    </div>
-                    <button onClick={() => updateStatus(item.id, 'ignored')}>Ignorer</button>
-                  </article>
-                ))}
+              </section>
+            )}
+
+            </div>
+
+            <div className="cards-toolbar">
+              <div className="cards-toolbar-left">
+                <strong>Cartes scannees</strong>
+                <span>
+                  {visibleItems.length} / {items.length}
+                  {statusFilter !== 'all' || timeFilter !== 'all' ? ' (filtres)' : ''}
+                </span>
               </div>
-            </section>
-
+              <button
+                type="button"
+                className={filtersOpen ? 'filter-toggle open' : 'filter-toggle'}
+                onClick={() => setFiltersOpen((value) => !value)}
+              >
+                <ListFilter size={14} /> Filtres
+              </button>
             </div>
 
-            <div className="filter-row cards-filter-row">
-              {(['all', 'new', 'watching', 'bid_planned', 'bought', 'too_expensive', 'ignored'] as const).map((status) => (
-                <button
-                  key={status}
-                  className={statusFilter === status ? 'filter selected' : 'filter'}
-                  onClick={() => setStatusFilter(status)}
-                >
-                  {status === 'all' ? 'tout' : statusLabels[status]}
-                </button>
-              ))}
-            </div>
+            {filtersOpen && (
+              <>
+                <div className="filter-row cards-filter-row">
+                  {(['all', 'new', 'in_basket', 'watching', 'bid_planned', 'bought', 'too_expensive', 'ignored'] as const).map((status) => (
+                    <button
+                      key={status}
+                      className={statusFilter === status ? 'filter selected' : 'filter'}
+                      onClick={() => setStatusFilter(status)}
+                    >
+                      {status === 'all' ? 'tout' : statusLabels[status]}
+                    </button>
+                  ))}
+                </div>
 
-            <div className="filter-row timeline-filters cards-filter-row">
-              {(['all', 'today', 'tomorrow', 'week', 'ended', 'undated'] as const).map((filter) => (
-                <button
-                  key={filter}
-                  className={timeFilter === filter ? 'filter selected' : 'filter'}
-                  onClick={() => setTimeFilter(filter)}
-                >
-                  {timeFilterLabels[filter]}
-                </button>
-              ))}
-            </div>
+                <div className="filter-row timeline-filters cards-filter-row">
+                  {(['all', 'today', 'tomorrow', 'week', 'ended', 'undated'] as const).map((filter) => (
+                    <button
+                      key={filter}
+                      className={timeFilter === filter ? 'filter selected' : 'filter'}
+                      onClick={() => setTimeFilter(filter)}
+                    >
+                      {timeFilterLabels[filter]}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
 
         <div className={mobileView === 'cards' ? 'items-grid mobile-cards-active' : 'items-grid'}>
           {visibleItems.map((item) => (
-            <article className="item-card" key={item.id}>
-              <div className="thumb">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={28} />}</div>
-              <div className="item-body">
-                <div className="item-title">{item.title}</div>
-                <div className="meta">
-                  <strong>{money(totalPrice(item), item.currency)}</strong>
-                  {item.shipping_price ? <span>dont port {money(item.shipping_price, item.currency)}</span> : <span>port inconnu</span>}
-                  <span>{item.country || '??'}</span>
-                  {item.buying_options?.length ? <span>{item.buying_options.includes('AUCTION') ? 'enchere' : item.buying_options.includes('FIXED_PRICE') ? 'achat immediat' : item.buying_options.join(', ')}</span> : null}
-                  {item.auction_end_at && (
-                    <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
-                      <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
-                    </span>
-                  )}
-                  {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} enchere{item.bid_count > 1 ? 's' : ''}</span> : null}
-                  {item.match_quality === 'partial' && item.match_query ? <span>match partiel: {item.match_query}</span> : null}
-                  {item.seller_username ? (
-                    <button className="seller-link" onClick={() => openSellerPanel(item.seller_username ?? '')}>
-                      {item.seller_username}
-                    </button>
-                  ) : <span>vendeur inconnu</span>}
-                  {item.condition && <span>{item.condition}</span>}
-                  {item.max_bid !== null && item.max_bid !== undefined && (
-                    <span className="max-bid">max {money(item.max_bid, item.currency)}</span>
-                  )}
-                </div>
-                {item.note && (
-                  <div className="item-note">{item.note}</div>
-                )}
-                <div className="status-row">
-                  {(['new', 'watching', 'bid_planned', 'bought', 'too_expensive', 'ignored'] as const).map((status) => (
-                    <button key={status} className={item.status === status ? 'chip selected' : 'chip'} onClick={() => updateStatus(item.id, status)}>
-                      {statusLabels[status]}
-                    </button>
-                  ))}
-                </div>
-                <div className="card-actions">
-                  <button className="secondary-action" onClick={() => planBid(item)}>
-                    {item.max_bid ? `Modifier max ${money(item.max_bid, item.currency)}` : 'Definir max d\'enchere'}
-                  </button>
-                  <button className="secondary-action" onClick={() => saveNote(item)}>
-                    {item.note ? 'Modifier note' : 'Ajouter note'}
-                  </button>
-                  {item.seller_username && (
-                    <button className="secondary-action" onClick={() => openSellerPanel(item.seller_username ?? '')}>
-                      <Store size={15} /> Voir vendeur
-                    </button>
-                  )}
-                  <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
-                </div>
-              </div>
-            </article>
+            <OpportunityCard
+              key={item.id}
+              item={item}
+              ctx={signalCtxFor(item)}
+              variant="full"
+              onAddToBasket={(target) => toggleBasket(target)}
+              onPlanBid={planBid}
+              onIgnore={(target) => updateStatus(target.id, 'ignored')}
+              onOpenSeller={(seller) => openSellerPanel(seller)}
+            />
           ))}
         </div>
 

@@ -1635,3 +1635,147 @@ a {
   color: #d8d6cf;
   border: 1px solid #393d42;
 }
+
+/* ===== Sidebar compactee ===== */
+.sidebar-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  background: transparent;
+  color: #d8d6cf;
+  border: 1px dashed #393d42;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  justify-content: center;
+}
+
+.sidebar-add:hover {
+  border-color: #f4d182;
+  color: #f4d182;
+}
+
+.sidebar-add.open {
+  border-style: solid;
+  border-color: #393d42;
+  background: #15181b;
+}
+
+.sidebar-section-title {
+  margin: 8px 4px 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6f7277;
+}
+
+/* ===== Suggestions strip ===== */
+.suggestions-strip {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid #292d31;
+  border-radius: 8px;
+  background: #15181b;
+}
+
+.suggestions-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #a9aaa7;
+}
+
+.suggestions-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.suggestion-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid #2d3138;
+  border-radius: 7px;
+  background: #21252a;
+  color: #d8d6cf;
+  cursor: pointer;
+  text-align: left;
+}
+
+.suggestion-chip:hover {
+  border-color: #f4d182;
+}
+
+.suggestion-chip.favorite {
+  border-color: #f4d182;
+}
+
+.suggestion-chip strong {
+  font-size: 13px;
+  color: #f4f1eb;
+}
+
+.suggestion-chip span {
+  font-size: 11px;
+  color: #a9aaa7;
+}
+
+/* ===== Cards toolbar (entete liste cartes) ===== */
+.cards-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 18px 0 10px;
+  padding: 10px 12px;
+  border: 1px solid #292d31;
+  border-radius: 8px;
+  background: #15181b;
+}
+
+.cards-toolbar-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.cards-toolbar-left strong {
+  font-size: 14px;
+  color: #f4f1eb;
+}
+
+.cards-toolbar-left span {
+  font-size: 11px;
+  color: #6f7277;
+}
+
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid #393d42;
+  background: transparent;
+  color: #d8d6cf;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.filter-toggle.open {
+  background: #f4f1eb;
+  color: #15110a;
+  border-color: #f4f1eb;
+}
