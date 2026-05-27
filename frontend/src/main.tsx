@@ -786,18 +786,25 @@ function App() {
         </div>
       </aside>
 
-      <section className={`content mobile-view-${mobileView}`}>
+      <section className={`content mobile-view-${mobileView}${sellerPanel ? ' seller-mode' : ''}`}>
         <div className="mobile-command">
           <button className="ghost" onClick={() => setMobileSearchOpen(true)}>
             <Menu size={17} /> Recherches
           </button>
-          {selectedWatchlist && (
+          {selectedWatchlist && !sellerPanel && (
             <button onClick={() => scan(selectedWatchlist.id)} disabled={busy === `scan:${selectedWatchlist.id}`}>
               <RefreshCw size={16} /> Scanner
             </button>
           )}
+          {sellerPanel && (
+            <button className="ghost" onClick={() => setSellerPanel(null)}>
+              <X size={15} /> Retour aux cartes
+            </button>
+          )}
         </div>
 
+        {!sellerPanel && (
+        <>
         <header className="content-header">
           <div>
             <h1>{selectedWatchlist?.name ?? 'Aucune recherche'}</h1>
@@ -1049,42 +1056,54 @@ function App() {
             <span>{items.length === 0 ? 'Lance un scan pour importer les resultats eBay.' : 'Change de filtre ou marque des cartes dans ce statut.'}</span>
           </div>
         )}
-      </section>
-      {sellerPanel && (
-        <aside className="seller-panel">
-          <div className="seller-panel-header">
-            <div>
-              <span>Vendeur</span>
-              <strong>{sellerPanel.seller}</strong>
-            </div>
-            <div className="panel-actions">
-              <button
-                className={favoriteSellerUsernames.has(sellerPanel.seller) ? 'star-button selected' : 'star-button'}
-                onClick={() => toggleFavoriteSeller(sellerPanel.seller)}
-                title="Favori vendeur"
-              >
-                <Star size={15} />
-              </button>
-              <button className="ghost" onClick={() => setSellerPanel(null)}>Fermer</button>
-            </div>
-          </div>
+        </>
+        )}
+        {sellerPanel && (() => {
+          const basket = baskets.find((b) => b.seller === sellerPanel.seller);
+          const basketItems = sellerLocalItems.filter(
+            (item) => item.status === 'in_basket' || item.status === 'bid_planned',
+          );
+          const otherItems = sellerLocalItems.filter(
+            (item) => item.status !== 'in_basket' && item.status !== 'bid_planned',
+          );
+          const fav = favoriteByUsername.get(sellerPanel.seller);
+          const shippingValue =
+            fav?.shipping_estimate !== null && fav?.shipping_estimate !== undefined
+              ? String(fav.shipping_estimate)
+              : '';
+          const isFav = favoriteSellerUsernames.has(sellerPanel.seller);
+          return (
+            <div className="seller-view">
+              <header className="seller-view-header">
+                <div className="seller-view-title">
+                  <Store size={20} />
+                  <div>
+                    <span>Vendeur</span>
+                    <h1>{sellerPanel.seller}</h1>
+                  </div>
+                </div>
+                <div className="seller-view-actions">
+                  <button
+                    className={isFav ? 'star-button selected' : 'star-button'}
+                    onClick={() => toggleFavoriteSeller(sellerPanel.seller)}
+                    title="Favori vendeur"
+                  >
+                    <Star size={16} />
+                  </button>
+                  <a
+                    href={`https://www.ebay.com/sch/i.html?_ssn=${encodeURIComponent(sellerPanel.seller)}&LH_Auction=1`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="seller-ebay-link"
+                  >
+                    Toutes ses ventes eBay <ExternalLink size={12} />
+                  </a>
+                  <button className="ghost" onClick={() => setSellerPanel(null)}>Fermer</button>
+                </div>
+              </header>
 
-          {(() => {
-            const basket = baskets.find((b) => b.seller === sellerPanel.seller);
-            const basketItems = sellerLocalItems.filter(
-              (item) => item.status === 'in_basket' || item.status === 'bid_planned',
-            );
-            const otherItems = sellerLocalItems.filter(
-              (item) => item.status !== 'in_basket' && item.status !== 'bid_planned',
-            );
-            const fav = favoriteByUsername.get(sellerPanel.seller);
-            const shippingValue =
-              fav?.shipping_estimate !== null && fav?.shipping_estimate !== undefined
-                ? String(fav.shipping_estimate)
-                : '';
-            return (
-              <>
-                <div className="shipping-edit">
+              <div className="seller-view-summary">
+                <div className="shipping-edit inline">
                   <label htmlFor={`shipping-${sellerPanel.seller}`}>Frais de port estimes (groupes)</label>
                   <div className="shipping-edit-row">
                     <input
@@ -1104,173 +1123,138 @@ function App() {
                     <span className="shipping-currency">{basket?.currency ?? 'USD'}</span>
                   </div>
                 </div>
-
-                {basket ? (
-                  <section className="seller-basket-block">
-                    <div className="seller-section-title">
-                      <strong>Mon panier ({basket.count})</strong>
-                      <span>{basket.plannedBids > 0 ? `${basket.plannedBids} a encherir` : ''}</span>
+                {basket && (
+                  <div className="basket-money">
+                    <div className="basket-row">
+                      <span>Cartes au panier</span>
+                      <strong>{money(basket.cardsTotal, basket.currency)}</strong>
                     </div>
-                    <div className="basket-money compact">
-                      <div className="basket-row">
-                        <span>Cartes</span>
-                        <strong>{money(basket.cardsTotal, basket.currency)}</strong>
+                    <div className="basket-row">
+                      <span>+ port estime</span>
+                      <strong>{money(basket.groupedShipping, basket.currency)}</strong>
+                    </div>
+                    <div className="basket-row total">
+                      <span>Total panier</span>
+                      <strong>{money(basket.totalGrouped, basket.currency)}</strong>
+                    </div>
+                    {basket.savings > 0 && (
+                      <div className="basket-row savings">
+                        <span>Economie vs achats separes</span>
+                        <strong>-{money(basket.savings, basket.currency)}</strong>
                       </div>
-                      <div className="basket-row">
-                        <span>+ port estime</span>
-                        <strong>{money(basket.groupedShipping, basket.currency)}</strong>
-                      </div>
-                      <div className="basket-row total">
-                        <span>Total panier</span>
-                        <strong>{money(basket.totalGrouped, basket.currency)}</strong>
-                      </div>
-                      {basket.savings > 0 && (
-                        <div className="basket-row savings">
-                          <span>Economie vs achats separes</span>
-                          <strong>-{money(basket.savings, basket.currency)}</strong>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {basketItems.length > 0 && (
+                <section className="seller-section">
+                  <div className="seller-section-head">
+                    <ShoppingBasket size={16} />
+                    <h2>Mon panier ({basketItems.length})</h2>
+                    {basket && basket.plannedBids > 0 && (
+                      <span className="seller-section-tag">{basket.plannedBids} a encherir</span>
+                    )}
+                  </div>
+                  <div className="items-grid">
+                    {basketItems.map((item) => (
+                      <OpportunityCard
+                        key={item.id}
+                        item={item}
+                        ctx={signalCtxFor(item)}
+                        variant="full"
+                        onAddToBasket={(target) => toggleBasket(target)}
+                        onPlanBid={planBid}
+                        onIgnore={(target) => updateStatus(target.id, 'ignored')}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {otherItems.length > 0 && (
+                <section className="seller-section">
+                  <div className="seller-section-head">
+                    <Layers size={16} />
+                    <h2>Autres cartes vues ({otherItems.length})</h2>
+                    <span className="seller-section-tag">issues de tes scans</span>
+                  </div>
+                  <div className="items-grid">
+                    {otherItems.map((item) => (
+                      <OpportunityCard
+                        key={item.id}
+                        item={item}
+                        ctx={signalCtxFor(item)}
+                        variant="full"
+                        onAddToBasket={(target) => toggleBasket(target)}
+                        onPlanBid={planBid}
+                        onIgnore={(target) => updateStatus(target.id, 'ignored')}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <section className="seller-section">
+                <div className="seller-section-head">
+                  <Search size={16} />
+                  <h2>Elargir sur eBay</h2>
+                  <span className="seller-section-tag">cartes pas encore scannees</span>
+                </div>
+                <form
+                  className="seller-search inline"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    expandSellerSearch();
+                  }}
+                >
+                  <input
+                    value={sellerPanel.expandedQuery}
+                    onChange={(event) => setSellerPanel({ ...sellerPanel, expandedQuery: event.target.value })}
+                    placeholder='ex. "card", "duncan", "auto"'
+                  />
+                  <button disabled={sellerPanel.expandedLoading}>
+                    <Search size={15} /> {sellerPanel.expandedLoading ? '...' : 'Chercher'}
+                  </button>
+                </form>
+
+                {sellerPanel.expandedError && <div className="notice">{sellerPanel.expandedError}</div>}
+                {sellerPanel.expandedLoading && <div className="empty-state compact">Recherche eBay...</div>}
+
+                {sellerExpandedItems.length > 0 && (
+                  <div className="seller-items grid">
+                    {sellerExpandedItems.map((item) => (
+                      <article className="seller-item expanded" key={item.external_id ?? item.url}>
+                        <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
+                        <div>
+                          <strong>{item.title}</strong>
+                          <div className="meta">
+                            <span>{money(totalPrice(item), item.currency)}</span>
+                            {item.auction_end_at && (
+                              <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
+                                <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
+                              </span>
+                            )}
+                            {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} bid{item.bid_count > 1 ? 's' : ''}</span> : null}
+                          </div>
+                          <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
                         </div>
-                      )}
-                    </div>
-                    <div className="seller-items">
-                      {basketItems.map((item) => {
-                        const sourceWatchlist = watchlistById.get(item.watchlist_id);
-                        return (
-                          <article className="seller-item in-basket" key={item.id}>
-                            <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
-                            <div>
-                              <strong>{item.title}</strong>
-                              <div className="meta">
-                                <span>{money(totalPrice(item), item.currency)}</span>
-                                {item.auction_end_at && (
-                                  <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
-                                    <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
-                                  </span>
-                                )}
-                                {item.status === 'bid_planned' && item.max_bid && (
-                                  <span className="max-bid">max {money(item.max_bid, item.currency)}</span>
-                                )}
-                                {sourceWatchlist && (
-                                  <span className="origin-tag">via {sourceWatchlist.name}</span>
-                                )}
-                              </div>
-                              <div className="seller-item-actions">
-                                <button className="ghost mini" onClick={() => toggleBasket(item)}>Retirer</button>
-                                <a href={item.url} target="_blank" rel="noreferrer">eBay</a>
-                              </div>
-                            </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  </section>
-                ) : (
-                  <div className="empty-state compact">
-                    Pas encore de panier chez ce vendeur. Ajoute des cartes ci-dessous.
+                      </article>
+                    ))}
                   </div>
                 )}
+              </section>
 
-                {otherItems.length > 0 && (
-                  <>
-                    <div className="seller-section-title">
-                      <strong>Autres cartes vues ({otherItems.length})</strong>
-                      <a href={`https://www.ebay.com/sch/i.html?_ssn=${encodeURIComponent(sellerPanel.seller)}&LH_Auction=1`} target="_blank" rel="noreferrer">
-                        Toutes ses ventes eBay <ExternalLink size={12} />
-                      </a>
-                    </div>
-                    <div className="seller-items">
-                      {otherItems.map((item) => {
-                        const sourceWatchlist = watchlistById.get(item.watchlist_id);
-                        return (
-                          <article className="seller-item" key={item.id}>
-                            <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
-                            <div>
-                              <strong>{item.title}</strong>
-                              <div className="meta">
-                                <span>{money(totalPrice(item), item.currency)}</span>
-                                {item.auction_end_at && (
-                                  <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
-                                    <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
-                                  </span>
-                                )}
-                                {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} bid{item.bid_count > 1 ? 's' : ''}</span> : null}
-                                {sourceWatchlist && (
-                                  <span className="origin-tag">via {sourceWatchlist.name}</span>
-                                )}
-                                {item.status !== 'new' && (
-                                  <span className={`status-tag status-${item.status}`}>{statusLabels[item.status]}</span>
-                                )}
-                              </div>
-                              <div className="seller-item-actions">
-                                <button className="primary mini" onClick={() => toggleBasket(item)}>
-                                  <ShoppingBasket size={12} /> Au panier
-                                </button>
-                                <a href={item.url} target="_blank" rel="noreferrer">eBay</a>
-                              </div>
-                            </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-              </>
-            );
-          })()}
-
-          <div className="seller-section-title">
-            <strong>Elargir sur eBay</strong>
-          </div>
-          <form
-            className="seller-search"
-            onSubmit={(event) => {
-              event.preventDefault();
-              expandSellerSearch();
-            }}
-          >
-            <input
-              value={sellerPanel.expandedQuery}
-              onChange={(event) => setSellerPanel({ ...sellerPanel, expandedQuery: event.target.value })}
-              placeholder='ex. "card", "duncan", "auto"'
-            />
-            <button disabled={sellerPanel.expandedLoading}>
-              <Search size={15} /> {sellerPanel.expandedLoading ? '...' : 'Chercher'}
-            </button>
-          </form>
-
-          {sellerPanel.expandedError && <div className="notice">{sellerPanel.expandedError}</div>}
-          {sellerPanel.expandedLoading && <div className="empty-state compact">Recherche eBay...</div>}
-
-          {sellerExpandedItems.length > 0 && (
-            <div className="seller-items">
-              {sellerExpandedItems.map((item) => (
-                <article className="seller-item" key={item.external_id ?? item.url}>
-                  <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
-                  <div>
-                    <strong>{item.title}</strong>
-                    <div className="meta">
-                      <span>{money(totalPrice(item), item.currency)}</span>
-                      {item.auction_end_at && (
-                        <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
-                          <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
-                        </span>
-                      )}
-                      {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} bid{item.bid_count > 1 ? 's' : ''}</span> : null}
-                    </div>
-                    <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
-                  </div>
-                </article>
-              ))}
+              {basketItems.length === 0 && otherItems.length === 0 && sellerExpandedItems.length === 0 && !sellerPanel.expandedLoading && (
+                <div className="empty-state">
+                  <strong>Aucune carte de ce vendeur dans tes scans.</strong>
+                  <span>Utilise "Elargir sur eBay" au-dessus pour voir ses ventes.</span>
+                </div>
+              )}
             </div>
-          )}
-
-          {sellerLocalItems.length === 0 && sellerExpandedItems.length === 0 && !sellerPanel.expandedLoading && (
-            <div className="empty-state compact">
-              Aucune carte de ce vendeur dans tes recherches.<br />
-              Lance une recherche eBay au-dessus pour voir ses ventes.
-            </div>
-          )}
-        </aside>
-      )}
+          );
+        })()}
+      </section>
     </main>
   );
 }
