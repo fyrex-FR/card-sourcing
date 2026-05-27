@@ -188,13 +188,13 @@ async def search_active_listings(
 async def search_seller_ending_auctions(
     seller_username: str,
     *,
-    query: str = "nba card",
-    days: int = 7,
+    query: str = "card",
+    days: int = 30,
     max_results: int = 100,
     marketplace: str = "EBAY_US",
 ) -> dict[str, Any]:
     seller = seller_username.strip()
-    search_query = query.strip() or "nba card"
+    search_query = query.strip() or "card"
     if not seller:
         return {"error": "empty_seller", "results": []}
 

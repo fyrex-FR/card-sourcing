@@ -177,11 +177,10 @@ function App() {
   const [now, setNow] = useState(() => Date.now());
   const [sellerPanel, setSellerPanel] = useState<{
     seller: string;
-    query: string;
-    loading: boolean;
-    error: string;
-    items: SourcingItem[];
-    total: number;
+    expanded: SourcingItem[]; // resultats eBay elargis (au-dela de la watchlist courante)
+    expandedLoading: boolean;
+    expandedError: string;
+    expandedQuery: string;
   } | null>(null);
 
   const selectedWatchlist = useMemo(
@@ -408,29 +407,59 @@ function App() {
     setSelectedId(null);
   }
 
-  async function openSellerPanel(seller: string, query = 'nba card') {
+  function openSellerPanel(seller: string) {
     const cleanSeller = seller.trim();
     if (!cleanSeller) return;
-    const cleanQuery = query.trim() || 'nba card';
-    setSellerPanel({ seller: cleanSeller, query: cleanQuery, loading: true, error: '', items: [], total: 0 });
+    setSellerPanel({
+      seller: cleanSeller,
+      expanded: [],
+      expandedLoading: false,
+      expandedError: '',
+      expandedQuery: 'card',
+    });
+  }
+
+  async function expandSellerSearch(query?: string) {
+    if (!sellerPanel) return;
+    const cleanQuery = (query ?? sellerPanel.expandedQuery).trim() || 'card';
+    setSellerPanel({ ...sellerPanel, expandedLoading: true, expandedError: '', expandedQuery: cleanQuery });
     try {
       const result = await apiFetch<SellerAuctionResult>(
-        `/sellers/${encodeURIComponent(cleanSeller)}/ending-auctions?query=${encodeURIComponent(cleanQuery)}&days=7`,
+        `/sellers/${encodeURIComponent(sellerPanel.seller)}/ending-auctions?query=${encodeURIComponent(cleanQuery)}&days=30`,
       );
       if (result.error) {
-        setSellerPanel({ seller: cleanSeller, query: cleanQuery, loading: false, error: result.details ? `${result.error}: ${result.details}` : result.error, items: [], total: 0 });
+        const errMsg: string = result.details ? `${result.error}: ${result.details}` : result.error;
+        setSellerPanel((current) =>
+          current && current.seller === sellerPanel.seller
+            ? {
+                ...current,
+                expandedLoading: false,
+                expandedError: errMsg,
+              }
+            : current,
+        );
         return;
       }
-      setSellerPanel({
-        seller: cleanSeller,
-        query: cleanQuery,
-        loading: false,
-        error: '',
-        items: result.results ?? [],
-        total: result.total ?? result.count ?? 0,
-      });
+      setSellerPanel((current) =>
+        current && current.seller === sellerPanel.seller
+          ? {
+              ...current,
+              expandedLoading: false,
+              expandedError: '',
+              expanded: result.results ?? [],
+            }
+          : current,
+      );
     } catch (err) {
-      setSellerPanel({ seller: cleanSeller, query: cleanQuery, loading: false, error: err instanceof Error ? err.message : 'Erreur inconnue', items: [], total: 0 });
+      setSellerPanel((current) =>
+        current && current.seller === sellerPanel.seller
+          ? {
+              ...current,
+              expandedLoading: false,
+              expandedError: err instanceof Error ? err.message : 'Erreur inconnue',
+            }
+          : current,
+      );
     }
   }
 
@@ -490,14 +519,37 @@ function App() {
     }
   }
 
+  // Items locaux pour le vendeur ouvert (issus du scan courant). Toujours dispo, zero appel API.
+  const sellerLocalItems = useMemo(() => {
+    if (!sellerPanel) return [] as SourcingItem[];
+    return items
+      .filter((item) => item.seller_username === sellerPanel.seller)
+      .sort((a, b) => {
+        const aEnd = a.auction_end_at ? new Date(a.auction_end_at).getTime() : Number.POSITIVE_INFINITY;
+        const bEnd = b.auction_end_at ? new Date(b.auction_end_at).getTime() : Number.POSITIVE_INFINITY;
+        return aEnd - bEnd;
+      });
+  }, [items, sellerPanel]);
+
+  // Items elargis filtres pour ne pas dupliquer ceux deja en local (par external_id)
+  const sellerExpandedItems = useMemo(() => {
+    if (!sellerPanel) return [] as SourcingItem[];
+    const knownIds = new Set(sellerLocalItems.map((item) => item.external_id).filter(Boolean));
+    return sellerPanel.expanded.filter((item) => !item.external_id || !knownIds.has(item.external_id));
+  }, [sellerLocalItems, sellerPanel]);
+
   const sellerBasket = useMemo(() => {
-    const sellerItems = sellerPanel?.items ?? [];
+    const all = [...sellerLocalItems, ...sellerExpandedItems];
     return {
-      count: sellerItems.length,
-      total: sellerItems.reduce((sum, item) => sum + totalPrice(item), 0),
-      nextEnding: sellerItems.find((item) => item.auction_end_at) ?? null,
+      count: all.length,
+      total: all.reduce((sum, item) => sum + totalPrice(item), 0),
+      nextEnding:
+        all
+          .filter((item) => item.auction_end_at && new Date(item.auction_end_at).getTime() > now)
+          .sort((a, b) => new Date(a.auction_end_at!).getTime() - new Date(b.auction_end_at!).getTime())[0] ?? null,
+      currency: all[0]?.currency ?? 'USD',
     };
-  }, [sellerPanel?.items]);
+  }, [now, sellerExpandedItems, sellerLocalItems]);
 
   if (loading) return <main className="center">Chargement...</main>;
   if (!session) return <LoginView />;
@@ -624,7 +676,7 @@ function App() {
                   onWatch={(target) => updateStatus(target.id, 'watching')}
                   onIgnore={(target) => updateStatus(target.id, 'ignored')}
                   onPlanBid={planBid}
-                  onOpenSeller={(seller) => openSellerPanel(seller, selectedWatchlist.query)}
+                  onOpenSeller={(seller) => openSellerPanel(seller)}
                 />
               ))}
               {visibleItems.length === 0 && <div className="empty-state compact">Lance un scan pour remplir la file d'action.</div>}
@@ -638,7 +690,7 @@ function App() {
               {sellerGroups.map((group) => (
                 <article className={group.favorite ? 'seller-group favorite' : 'seller-group'} key={group.seller}>
                   <div className="seller-group-head">
-                    <button className="seller-name" onClick={() => openSellerPanel(group.seller, selectedWatchlist.query)}>
+                    <button className="seller-name" onClick={() => openSellerPanel(group.seller)}>
                       <Store size={15} /> {group.seller}
                     </button>
                     <button className={group.favorite ? 'star-button selected' : 'star-button'} onClick={() => toggleFavoriteSeller(group.seller)} title="Favori vendeur">
@@ -659,35 +711,10 @@ function App() {
             </section>
 
             <div className="desktop-stack">
-            <div className="stat-grid">
-              <div className="stat">
-                <span>Total cartes</span>
-                <strong>{stats.total}</strong>
-              </div>
-              <div className="stat">
-                <span>A surveiller</span>
-                <strong>{stats.active}</strong>
-              </div>
-              <div className="stat">
-                <span>Achetees</span>
-                <strong>{stats.bought}</strong>
-              </div>
-              <div className="stat">
-                <span>Budget actif</span>
-                <strong>{money(stats.potentialSpend, stats.cheapest?.currency ?? 'USD')}</strong>
-              </div>
-            </div>
-
-            <div className="insight-strip">
-              <div>
-                <span>Meilleure entree</span>
-                <strong>{stats.cheapest ? `${money(totalPrice(stats.cheapest), stats.cheapest.currency)} - ${stats.cheapest.title}` : 'Aucune carte active'}</strong>
-              </div>
-              <div>
-                <span>Prochaine fin</span>
-                <strong>{stats.nextEnding ? `${timeLeftLabel(stats.nextEnding.auction_end_at, now)} - ${money(totalPrice(stats.nextEnding), stats.nextEnding.currency)} - ${stats.nextEnding.title}` : 'Aucune enchere datee'}</strong>
-              </div>
-              <span>Dernier scan : {dateLabel(selectedWatchlist.last_scan_at)}</span>
+            <div className="last-scan-row">
+              Dernier scan : {dateLabel(selectedWatchlist.last_scan_at)} ·
+              {' '}{stats.active} carte{stats.active > 1 ? 's' : ''} active{stats.active > 1 ? 's' : ''}
+              {stats.bought > 0 ? ` · ${stats.bought} achete${stats.bought > 1 ? 's' : ''}` : ''}
             </div>
 
             <section className="action-board">
@@ -709,7 +736,7 @@ function App() {
                     onWatch={(target) => updateStatus(target.id, 'watching')}
                     onIgnore={(target) => updateStatus(target.id, 'ignored')}
                     onPlanBid={planBid}
-                    onOpenSeller={(seller) => openSellerPanel(seller, selectedWatchlist.query)}
+                    onOpenSeller={(seller) => openSellerPanel(seller)}
                   />
                 ))}
               </div>
@@ -729,7 +756,7 @@ function App() {
                       <strong>{group.seller}</strong>
                       <span>{group.count} cartes · {group.sevenDayCount} fins J+7 · {money(group.total, group.items[0]?.currency ?? 'USD')}</span>
                     </div>
-                    <button onClick={() => openSellerPanel(group.seller, selectedWatchlist.query)}>Explorer</button>
+                    <button onClick={() => openSellerPanel(group.seller)}>Explorer</button>
                   </article>
                 ))}
               </div>
@@ -754,43 +781,6 @@ function App() {
                 ))}
               </div>
             </section>
-
-            {sellerGroups.length > 0 && (
-              <section className="seller-dashboard">
-                <div className="section-title">
-                  <div>
-                    <span>Panier vendeur</span>
-                    <strong>Vendeurs actifs sur cette recherche</strong>
-                  </div>
-                  <small>{sellerGroups.length} vendeur{sellerGroups.length > 1 ? 's' : ''} avec cartes actives</small>
-                </div>
-                <div className="seller-group-grid">
-                  {sellerGroups.map((group) => (
-                    <article className={group.favorite ? 'seller-group favorite' : 'seller-group'} key={group.seller}>
-                      <div className="seller-group-head">
-                        <button className="seller-name" onClick={() => openSellerPanel(group.seller, selectedWatchlist.query)}>
-                          <Store size={15} /> {group.seller}
-                        </button>
-                        <button className={group.favorite ? 'star-button selected' : 'star-button'} onClick={() => toggleFavoriteSeller(group.seller)} title="Favori vendeur">
-                          <Star size={15} />
-                        </button>
-                      </div>
-                      <div className="seller-group-stats">
-                        <span>{group.count} suivie{group.count > 1 ? 's' : ''}</span>
-                        <span>{group.sevenDayCount} fin J+7</span>
-                        <strong>{money(group.total, group.items[0]?.currency ?? 'USD')}</strong>
-                      </div>
-                      {group.nextEnding && (
-                        <button className="seller-group-next" onClick={() => openSellerPanel(group.seller, selectedWatchlist.query)}>
-                          <CalendarDays size={14} />
-                          <span>{timeLeftLabel(group.nextEnding.auction_end_at, now)} - {group.nextEnding.title}</span>
-                        </button>
-                      )}
-                    </article>
-                  ))}
-                </div>
-              </section>
-            )}
 
             </div>
 
@@ -839,7 +829,7 @@ function App() {
                   {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} enchere{item.bid_count > 1 ? 's' : ''}</span> : null}
                   {item.match_quality === 'partial' && item.match_query ? <span>match partiel: {item.match_query}</span> : null}
                   {item.seller_username ? (
-                    <button className="seller-link" onClick={() => openSellerPanel(item.seller_username ?? '', selectedWatchlist?.query ?? 'nba card')}>
+                    <button className="seller-link" onClick={() => openSellerPanel(item.seller_username ?? '')}>
                       {item.seller_username}
                     </button>
                   ) : <span>vendeur inconnu</span>}
@@ -866,7 +856,7 @@ function App() {
                     {item.note ? 'Modifier note' : 'Ajouter note'}
                   </button>
                   {item.seller_username && (
-                    <button className="secondary-action" onClick={() => openSellerPanel(item.seller_username ?? '', selectedWatchlist?.query ?? 'nba card')}>
+                    <button className="secondary-action" onClick={() => openSellerPanel(item.seller_username ?? '')}>
                       <Store size={15} /> Voir vendeur
                     </button>
                   )}
@@ -892,36 +882,25 @@ function App() {
               <strong>{sellerPanel.seller}</strong>
             </div>
             <div className="panel-actions">
-              <button className={favoriteSellers.includes(sellerPanel.seller) ? 'star-button selected' : 'star-button'} onClick={() => toggleFavoriteSeller(sellerPanel.seller)} title="Favori vendeur">
+              <button
+                className={favoriteSellers.includes(sellerPanel.seller) ? 'star-button selected' : 'star-button'}
+                onClick={() => toggleFavoriteSeller(sellerPanel.seller)}
+                title="Favori vendeur"
+              >
                 <Star size={15} />
               </button>
               <button className="ghost" onClick={() => setSellerPanel(null)}>Fermer</button>
             </div>
           </div>
 
-          <form
-            className="seller-search"
-            onSubmit={(event) => {
-              event.preventDefault();
-              openSellerPanel(sellerPanel.seller, sellerPanel.query);
-            }}
-          >
-            <input
-              value={sellerPanel.query}
-              onChange={(event) => setSellerPanel({ ...sellerPanel, query: event.target.value })}
-              placeholder="Recherche vendeur"
-            />
-            <button disabled={sellerPanel.loading}><Search size={15} /> Voir</button>
-          </form>
-
           <div className="seller-summary">
             <div>
-              <span>Encheres J+7</span>
-              <strong>{sellerPanel.loading ? '-' : sellerBasket.count}</strong>
+              <span>Cartes vues</span>
+              <strong>{sellerBasket.count}</strong>
             </div>
             <div>
               <span>Panier potentiel</span>
-              <strong>{money(sellerBasket.total, sellerPanel.items[0]?.currency ?? 'USD')}</strong>
+              <strong>{money(sellerBasket.total, sellerBasket.currency)}</strong>
             </div>
           </div>
 
@@ -932,32 +911,89 @@ function App() {
             </div>
           )}
 
-          {sellerPanel.error && <div className="notice">{sellerPanel.error}</div>}
-          {sellerPanel.loading && <div className="empty-state compact">Chargement des encheres vendeur...</div>}
-          {!sellerPanel.loading && !sellerPanel.error && sellerPanel.items.length === 0 && (
-            <div className="empty-state compact">Aucune enchere trouvee sur 7 jours pour cette recherche.</div>
+          {sellerLocalItems.length > 0 && (
+            <>
+              <div className="seller-section-title">
+                <strong>Cartes de cette recherche ({sellerLocalItems.length})</strong>
+                <a href={`https://www.ebay.com/sch/i.html?_ssn=${encodeURIComponent(sellerPanel.seller)}&LH_Auction=1`} target="_blank" rel="noreferrer">
+                  Toutes ses ventes eBay <ExternalLink size={12} />
+                </a>
+              </div>
+              <div className="seller-items">
+                {sellerLocalItems.map((item) => (
+                  <article className="seller-item" key={item.id}>
+                    <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
+                    <div>
+                      <strong>{item.title}</strong>
+                      <div className="meta">
+                        <span>{money(totalPrice(item), item.currency)}</span>
+                        {item.auction_end_at && (
+                          <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
+                            <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
+                          </span>
+                        )}
+                        {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} bid{item.bid_count > 1 ? 's' : ''}</span> : null}
+                      </div>
+                      <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </>
           )}
 
-          <div className="seller-items">
-            {sellerPanel.items.map((item) => (
-              <article className="seller-item" key={item.external_id ?? item.url}>
-                <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
-                <div>
-                  <strong>{item.title}</strong>
-                  <div className="meta">
-                    <span>{money(totalPrice(item), item.currency)}</span>
-                    {item.auction_end_at && (
-                      <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
-                        <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
-                      </span>
-                    )}
-                    {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} bid{item.bid_count > 1 ? 's' : ''}</span> : null}
-                  </div>
-                  <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
-                </div>
-              </article>
-            ))}
+          <div className="seller-section-title">
+            <strong>Elargir sur eBay</strong>
           </div>
+          <form
+            className="seller-search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              expandSellerSearch();
+            }}
+          >
+            <input
+              value={sellerPanel.expandedQuery}
+              onChange={(event) => setSellerPanel({ ...sellerPanel, expandedQuery: event.target.value })}
+              placeholder='ex. "card", "duncan", "auto"'
+            />
+            <button disabled={sellerPanel.expandedLoading}>
+              <Search size={15} /> {sellerPanel.expandedLoading ? '...' : 'Chercher'}
+            </button>
+          </form>
+
+          {sellerPanel.expandedError && <div className="notice">{sellerPanel.expandedError}</div>}
+          {sellerPanel.expandedLoading && <div className="empty-state compact">Recherche eBay...</div>}
+
+          {sellerExpandedItems.length > 0 && (
+            <div className="seller-items">
+              {sellerExpandedItems.map((item) => (
+                <article className="seller-item" key={item.external_id ?? item.url}>
+                  <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
+                  <div>
+                    <strong>{item.title}</strong>
+                    <div className="meta">
+                      <span>{money(totalPrice(item), item.currency)}</span>
+                      {item.auction_end_at && (
+                        <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
+                          <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
+                        </span>
+                      )}
+                      {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} bid{item.bid_count > 1 ? 's' : ''}</span> : null}
+                    </div>
+                    <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+
+          {sellerLocalItems.length === 0 && sellerExpandedItems.length === 0 && !sellerPanel.expandedLoading && (
+            <div className="empty-state compact">
+              Aucune carte de ce vendeur dans la recherche courante.<br />
+              Lance une recherche eBay au-dessus pour voir ses ventes.
+            </div>
+          )}
         </aside>
       )}
     </main>

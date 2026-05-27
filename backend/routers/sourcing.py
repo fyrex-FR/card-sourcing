@@ -209,8 +209,8 @@ async def remove_seller_favorite(seller_username: str, user: dict = Depends(curr
 @router.get("/sellers/{seller_username}/ending-auctions")
 async def seller_ending_auctions(
     seller_username: str,
-    query: str = "nba card",
-    days: int = 7,
+    query: str = "card",
+    days: int = 30,
     marketplace: str = "EBAY_US",
     user: dict = Depends(current_user),
 ):
