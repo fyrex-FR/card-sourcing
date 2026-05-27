@@ -4,7 +4,9 @@ import { CalendarDays, Clock, ExternalLink, Eye, Flame, Layers, ListFilter, Menu
 import { apiFetch } from './api/client';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
-import type { ScanResult, SellerAuctionResult, SourcingItem, Watchlist } from './types';
+import { OpportunityCard } from './components/OpportunityCard';
+import type { SignalContext } from './lib/itemSignals';
+import type { ScanResult, SellerAuctionResult, SellerFavorite, SourcingItem, Watchlist } from './types';
 import './styles.css';
 
 type FormState = {
@@ -30,6 +32,7 @@ const initialForm: FormState = {
 const statusLabels: Record<SourcingItem['status'], string> = {
   new: 'nouveau',
   watching: 'a suivre',
+  bid_planned: 'a encherir',
   ignored: 'ignore',
   bought: 'achete',
   too_expensive: 'trop cher',
@@ -167,13 +170,7 @@ function App() {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [mobileView, setMobileView] = useState<MobileView>('action');
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
-  const [favoriteSellers, setFavoriteSellers] = useState<string[]>(() => {
-    try {
-      return JSON.parse(window.localStorage.getItem('card-sourcing:favorites') ?? '[]');
-    } catch {
-      return [];
-    }
-  });
+  const [favoriteSellers, setFavoriteSellers] = useState<string[]>([]);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [scanMessage, setScanMessage] = useState('');
@@ -304,13 +301,24 @@ function App() {
       .filter((item) => item.status === 'new' && (auctionBucket(item.auction_end_at, now) === 'ended' || !item.image_url || !item.seller_username))
       .slice(0, 5);
 
-    return { urgent, sellerMissions, clean };
+    return { urgent, sellerMissions, clean, sellerCounts };
   }, [favoriteSellers, items, now, selectedWatchlist?.max_price, sellerGroups]);
+
+  const signalCtxFor = (item: SourcingItem): SignalContext => ({
+    now,
+    maxPrice: selectedWatchlist?.max_price ?? null,
+    sellerCount: item.seller_username ? actionBoard.sellerCounts.get(item.seller_username) ?? 1 : 1,
+    favoriteSeller: item.seller_username ? favoriteSellers.includes(item.seller_username) : false,
+  });
 
   async function load() {
     setError('');
-    const nextWatchlists = await apiFetch<Watchlist[]>('/watchlists');
+    const [nextWatchlists, favorites] = await Promise.all([
+      apiFetch<Watchlist[]>('/watchlists'),
+      apiFetch<SellerFavorite[]>('/seller-favorites').catch(() => [] as SellerFavorite[]),
+    ]);
     setWatchlists(nextWatchlists);
+    setFavoriteSellers(favorites.map((favorite) => favorite.seller_username));
     const active = selectedId ?? nextWatchlists[0]?.id;
     setSelectedId(active ?? null);
     const suffix = active ? `?watchlist_id=${active}` : '';
@@ -326,10 +334,6 @@ function App() {
     const timer = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem('card-sourcing:favorites', JSON.stringify(favoriteSellers));
-  }, [favoriteSellers]);
 
   useEffect(() => {
     if (!session || !selectedId) return;
@@ -430,10 +434,60 @@ function App() {
     }
   }
 
-  function toggleFavoriteSeller(seller: string) {
-    setFavoriteSellers((current) => (
-      current.includes(seller) ? current.filter((item) => item !== seller) : [seller, ...current]
-    ));
+  async function toggleFavoriteSeller(seller: string) {
+    const isFav = favoriteSellers.includes(seller);
+    // Mise a jour optimiste
+    setFavoriteSellers((current) => (isFav ? current.filter((item) => item !== seller) : [seller, ...current]));
+    try {
+      if (isFav) {
+        await apiFetch(`/seller-favorites/${encodeURIComponent(seller)}`, { method: 'DELETE' });
+      } else {
+        await apiFetch('/seller-favorites', {
+          method: 'POST',
+          body: JSON.stringify({ seller_username: seller }),
+        });
+      }
+    } catch (err) {
+      // Rollback
+      setFavoriteSellers((current) => (isFav ? [seller, ...current] : current.filter((item) => item !== seller)));
+      setError(err instanceof Error ? err.message : 'Erreur favori');
+    }
+  }
+
+  async function planBid(item: SourcingItem) {
+    const current = item.max_bid !== null && item.max_bid !== undefined ? String(item.max_bid) : '';
+    const input = window.prompt(`Montant max d'enchere pour "${item.title.slice(0, 60)}" (${item.currency})`, current);
+    if (input === null) return;
+    const trimmed = input.trim();
+    const max_bid = trimmed === '' ? null : Number(trimmed);
+    if (max_bid !== null && (Number.isNaN(max_bid) || max_bid < 0)) {
+      setError('Montant invalide');
+      return;
+    }
+    try {
+      const updated = await apiFetch<SourcingItem>(`/items/${item.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'bid_planned', max_bid }),
+      });
+      setItems((list) => list.map((entry) => (entry.id === item.id ? updated : entry)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur planification');
+    }
+  }
+
+  async function saveNote(item: SourcingItem) {
+    const input = window.prompt('Note privee', item.note ?? '');
+    if (input === null) return;
+    const note = input.trim() === '' ? null : input;
+    try {
+      const updated = await apiFetch<SourcingItem>(`/items/${item.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ note }),
+      });
+      setItems((list) => list.map((entry) => (entry.id === item.id ? updated : entry)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur note');
+    }
   }
 
   const sellerBasket = useMemo(() => {
@@ -562,26 +616,16 @@ function App() {
                 <span>{actionBoard.urgent.length || visibleItems.length} carte{(actionBoard.urgent.length || visibleItems.length) > 1 ? 's' : ''}</span>
               </div>
               {(actionBoard.urgent.length ? actionBoard.urgent.map(({ item }) => item) : visibleItems.filter(isActiveItem).slice(0, 8)).map((item) => (
-                <article className="mobile-deal" key={item.id}>
-                  <div className="mobile-deal-main">
-                    <strong>{money(totalPrice(item), item.currency)}</strong>
-                    {item.auction_end_at && (
-                      <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
-                        <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
-                      </span>
-                    )}
-                  </div>
-                  <p>{item.title}</p>
-                  <div className="mobile-deal-meta">
-                    <span>{item.seller_username ?? 'vendeur inconnu'}</span>
-                    {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} enchere{item.bid_count > 1 ? 's' : ''}</span> : <span>encheres ?</span>}
-                  </div>
-                  <div className="mobile-deal-actions">
-                    <button onClick={() => updateStatus(item.id, 'watching')}>Suivre</button>
-                    <button onClick={() => updateStatus(item.id, 'ignored')} className="ghost">Ignorer</button>
-                    <a href={item.url} target="_blank" rel="noreferrer">eBay</a>
-                  </div>
-                </article>
+                <OpportunityCard
+                  key={item.id}
+                  item={item}
+                  ctx={signalCtxFor(item)}
+                  variant="compact"
+                  onWatch={(target) => updateStatus(target.id, 'watching')}
+                  onIgnore={(target) => updateStatus(target.id, 'ignored')}
+                  onPlanBid={planBid}
+                  onOpenSeller={(seller) => openSellerPanel(seller, selectedWatchlist.query)}
+                />
               ))}
               {visibleItems.length === 0 && <div className="empty-state compact">Lance un scan pour remplir la file d'action.</div>}
             </section>
@@ -656,17 +700,17 @@ function App() {
                   </div>
                 </div>
                 {actionBoard.urgent.length === 0 && <div className="lane-empty">Rien d'urgent dans les 48h.</div>}
-                {actionBoard.urgent.map(({ item, score }) => (
-                  <article className="action-item" key={item.id}>
-                    <div>
-                      <strong>{item.title}</strong>
-                      <span>{money(totalPrice(item), item.currency)} · {timeLeftLabel(item.auction_end_at, now)} · score {score}</span>
-                    </div>
-                    <div className="mini-actions">
-                      <button onClick={() => updateStatus(item.id, 'watching')}>Suivre</button>
-                      <a href={item.url} target="_blank" rel="noreferrer">eBay</a>
-                    </div>
-                  </article>
+                {actionBoard.urgent.map(({ item }) => (
+                  <OpportunityCard
+                    key={item.id}
+                    item={item}
+                    ctx={signalCtxFor(item)}
+                    variant="compact"
+                    onWatch={(target) => updateStatus(target.id, 'watching')}
+                    onIgnore={(target) => updateStatus(target.id, 'ignored')}
+                    onPlanBid={planBid}
+                    onOpenSeller={(seller) => openSellerPanel(seller, selectedWatchlist.query)}
+                  />
                 ))}
               </div>
 
@@ -751,7 +795,7 @@ function App() {
             </div>
 
             <div className="filter-row cards-filter-row">
-              {(['all', 'new', 'watching', 'bought', 'too_expensive', 'ignored'] as const).map((status) => (
+              {(['all', 'new', 'watching', 'bid_planned', 'bought', 'too_expensive', 'ignored'] as const).map((status) => (
                 <button
                   key={status}
                   className={statusFilter === status ? 'filter selected' : 'filter'}
@@ -800,15 +844,27 @@ function App() {
                     </button>
                   ) : <span>vendeur inconnu</span>}
                   {item.condition && <span>{item.condition}</span>}
+                  {item.max_bid !== null && item.max_bid !== undefined && (
+                    <span className="max-bid">max {money(item.max_bid, item.currency)}</span>
+                  )}
                 </div>
+                {item.note && (
+                  <div className="item-note">{item.note}</div>
+                )}
                 <div className="status-row">
-                  {(['new', 'watching', 'bought', 'too_expensive', 'ignored'] as const).map((status) => (
+                  {(['new', 'watching', 'bid_planned', 'bought', 'too_expensive', 'ignored'] as const).map((status) => (
                     <button key={status} className={item.status === status ? 'chip selected' : 'chip'} onClick={() => updateStatus(item.id, status)}>
                       {statusLabels[status]}
                     </button>
                   ))}
                 </div>
                 <div className="card-actions">
+                  <button className="secondary-action" onClick={() => planBid(item)}>
+                    {item.max_bid ? `Modifier max ${money(item.max_bid, item.currency)}` : 'Definir max d\'enchere'}
+                  </button>
+                  <button className="secondary-action" onClick={() => saveNote(item)}>
+                    {item.note ? 'Modifier note' : 'Ajouter note'}
+                  </button>
                   {item.seller_username && (
                     <button className="secondary-action" onClick={() => openSellerPanel(item.seller_username ?? '', selectedWatchlist?.query ?? 'nba card')}>
                       <Store size={15} /> Voir vendeur

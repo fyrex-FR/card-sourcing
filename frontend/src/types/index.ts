@@ -32,8 +32,17 @@ export type SourcingItem = {
   bid_count: number | null;
   match_query: string | null;
   match_quality: 'exact' | 'partial' | null;
-  status: 'new' | 'watching' | 'ignored' | 'bought' | 'too_expensive';
+  status: 'new' | 'watching' | 'bid_planned' | 'ignored' | 'bought' | 'too_expensive';
+  max_bid: number | null;
+  note: string | null;
   first_seen_at: string;
+};
+
+export type SellerFavorite = {
+  user_id: string;
+  seller_username: string;
+  note: string | null;
+  created_at: string;
 };
 
 export type ScanResult = {

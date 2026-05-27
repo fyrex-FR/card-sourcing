@@ -33,10 +33,21 @@ class WatchlistUpdate(BaseModel):
 
 
 class ItemStatusUpdate(BaseModel):
-    status: Literal["new", "watching", "ignored", "bought", "too_expensive"]
+    status: Literal["new", "watching", "bid_planned", "ignored", "bought", "too_expensive"]
 
 
-OPTIONAL_ITEM_COLUMNS = {"auction_end_at", "bid_count", "match_query", "match_quality"}
+class ItemUpdate(BaseModel):
+    status: Literal["new", "watching", "bid_planned", "ignored", "bought", "too_expensive"] | None = None
+    max_bid: float | None = Field(default=None, ge=0)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class SellerFavoriteCreate(BaseModel):
+    seller_username: str = Field(min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=500)
+
+
+OPTIONAL_ITEM_COLUMNS = {"auction_end_at", "bid_count", "match_query", "match_quality", "max_bid", "note"}
 
 
 def _user_id(user: dict) -> str:
@@ -129,6 +140,72 @@ async def update_item_status(item_id: str, body: ItemStatusUpdate, user: dict = 
     return rows[0]
 
 
+@router.patch("/items/{item_id}")
+async def update_item(item_id: str, body: ItemUpdate, user: dict = Depends(current_user)):
+    payload = {key: value for key, value in body.model_dump().items() if value is not None}
+    if not payload:
+        raise HTTPException(status_code=400, detail="empty_update")
+    user_id = _user_id(user)
+    try:
+        rows = await request(
+            "PATCH",
+            "sourcing_items",
+            params={"id": f"eq.{item_id}", "user_id": f"eq.{user_id}"},
+            json=payload,
+            prefer="return=representation",
+        )
+    except HTTPException as exc:
+        if not _is_missing_optional_column(exc):
+            raise
+        cleaned = _without_optional_item_columns(payload)
+        if not cleaned:
+            raise HTTPException(status_code=400, detail="migration_required")
+        rows = await request(
+            "PATCH",
+            "sourcing_items",
+            params={"id": f"eq.{item_id}", "user_id": f"eq.{user_id}"},
+            json=cleaned,
+            prefer="return=representation",
+        )
+    if not rows:
+        raise HTTPException(status_code=404, detail="item_not_found")
+    return rows[0]
+
+
+@router.get("/seller-favorites")
+async def list_seller_favorites(user: dict = Depends(current_user)):
+    return await request(
+        "GET",
+        "sourcing_seller_favorites",
+        params={"user_id": f"eq.{_user_id(user)}", "order": "created_at.desc"},
+    )
+
+
+@router.post("/seller-favorites", status_code=201)
+async def add_seller_favorite(body: SellerFavoriteCreate, user: dict = Depends(current_user)):
+    payload = body.model_dump()
+    payload["user_id"] = _user_id(user)
+    rows = await request(
+        "POST",
+        "sourcing_seller_favorites",
+        json=payload,
+        prefer="return=representation,resolution=merge-duplicates",
+    )
+    return rows[0] if rows else payload
+
+
+@router.delete("/seller-favorites/{seller_username}", status_code=204)
+async def remove_seller_favorite(seller_username: str, user: dict = Depends(current_user)):
+    await request(
+        "DELETE",
+        "sourcing_seller_favorites",
+        params={
+            "seller_username": f"eq.{seller_username}",
+            "user_id": f"eq.{_user_id(user)}",
+        },
+    )
+
+
 @router.get("/sellers/{seller_username}/ending-auctions")
 async def seller_ending_auctions(
     seller_username: str,
@@ -163,6 +240,7 @@ async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
         return ebay_data
 
     user_id = _user_id(user)
+    now_iso = datetime.now(timezone.utc).isoformat()
     candidates = []
 
     for item in ebay_data["results"]:
@@ -172,66 +250,53 @@ async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
             continue
         if max_price is not None and item["price"] > float(max_price):
             continue
+        if not item.get("external_id"):
+            # Sans external_id pas de dedup possible, on skip pour eviter les doublons
+            continue
         candidates.append(item)
 
-    saved = []
-    for item in candidates:
-        existing = await request(
-            "GET",
-            "sourcing_items",
-            params={
-                "user_id": f"eq.{user_id}",
-                "watchlist_id": f"eq.{watchlist_id}",
-                "external_id": f"eq.{item.get('external_id')}",
-                "limit": "1",
-            },
-        )
-        payload = {
-            "user_id": user_id,
-            "watchlist_id": watchlist_id,
-            **{key: value for key, value in item.items() if key != "raw"},
-            "source": "ebay",
-            "raw": item.get("raw"),
-        }
-        if existing:
-            update_payload = {**payload, "last_seen_at": datetime.now(timezone.utc).isoformat()}
-            try:
-                rows = await request(
-                    "PATCH",
-                    "sourcing_items",
-                    params={"id": f"eq.{existing[0]['id']}", "user_id": f"eq.{user_id}"},
-                    json=update_payload,
-                    prefer="return=representation",
-                )
-            except HTTPException as exc:
-                if not _is_missing_optional_column(exc):
-                    raise
-                rows = await request(
-                    "PATCH",
-                    "sourcing_items",
-                    params={"id": f"eq.{existing[0]['id']}", "user_id": f"eq.{user_id}"},
-                    json=_without_optional_item_columns(update_payload),
-                    prefer="return=representation",
-                )
-        else:
-            try:
-                rows = await request("POST", "sourcing_items", json=payload, prefer="return=representation")
-            except HTTPException as exc:
-                if not _is_missing_optional_column(exc):
-                    raise
-                rows = await request(
-                    "POST",
-                    "sourcing_items",
-                    json=_without_optional_item_columns(payload),
-                    prefer="return=representation",
-                )
-        saved.append(rows[0])
+    # Upsert en lot via la contrainte unique (user_id, watchlist_id, source, external_id).
+    # Le PostgREST resolution=merge-duplicates met a jour les colonnes presentes dans le
+    # payload sans toucher aux autres (notamment status, note, max_bid si user en a mis).
+    saved: list[dict[str, Any]] = []
+    if candidates:
+        batch = [
+            {
+                "user_id": user_id,
+                "watchlist_id": watchlist_id,
+                "source": "ebay",
+                **{key: value for key, value in item.items() if key != "raw"},
+                "raw": item.get("raw"),
+                "last_seen_at": now_iso,
+            }
+            for item in candidates
+        ]
+        on_conflict = "user_id,watchlist_id,source,external_id"
+        try:
+            saved = await request(
+                "POST",
+                "sourcing_items",
+                params={"on_conflict": on_conflict},
+                json=batch,
+                prefer="return=representation,resolution=merge-duplicates",
+            ) or []
+        except HTTPException as exc:
+            if not _is_missing_optional_column(exc):
+                raise
+            cleaned_batch = [_without_optional_item_columns(payload) for payload in batch]
+            saved = await request(
+                "POST",
+                "sourcing_items",
+                params={"on_conflict": on_conflict},
+                json=cleaned_batch,
+                prefer="return=representation,resolution=merge-duplicates",
+            ) or []
 
     await request(
         "PATCH",
         "sourcing_watchlists",
         params={"id": f"eq.{watchlist_id}", "user_id": f"eq.{user_id}"},
-        json={"last_scan_at": datetime.now(timezone.utc).isoformat()},
+        json={"last_scan_at": now_iso},
     )
 
     return {
