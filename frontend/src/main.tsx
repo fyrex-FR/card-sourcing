@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CalendarDays, Clock, ExternalLink, Eye, Flame, Layers, ListFilter, Menu, RefreshCw, Search, Star, Store, Target, Trash2, X } from 'lucide-react';
+import { CalendarDays, Clock, ExternalLink, Eye, Flame, Layers, ListFilter, Menu, RefreshCw, Search, ShoppingBasket, Star, Store, Target, Trash2, X } from 'lucide-react';
 import { apiFetch } from './api/client';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
@@ -32,11 +32,14 @@ const initialForm: FormState = {
 const statusLabels: Record<SourcingItem['status'], string> = {
   new: 'nouveau',
   watching: 'a suivre',
+  in_basket: 'au panier',
   bid_planned: 'a encherir',
   ignored: 'ignore',
   bought: 'achete',
   too_expensive: 'trop cher',
 };
+
+const DEFAULT_SHIPPING = 12;
 
 const buyingOptionLabels: Record<Watchlist['buying_option'], string> = {
   ALL: 'tout',
@@ -170,7 +173,18 @@ function App() {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
   const [mobileView, setMobileView] = useState<MobileView>('action');
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
-  const [favoriteSellers, setFavoriteSellers] = useState<string[]>([]);
+  const [favoriteSellers, setFavoriteSellers] = useState<SellerFavorite[]>([]);
+
+  const favoriteSellerUsernames = useMemo(
+    () => new Set(favoriteSellers.map((favorite) => favorite.seller_username)),
+    [favoriteSellers],
+  );
+
+  const favoriteByUsername = useMemo(() => {
+    const map = new Map<string, SellerFavorite>();
+    for (const favorite of favoriteSellers) map.set(favorite.seller_username, favorite);
+    return map;
+  }, [favoriteSellers]);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [scanMessage, setScanMessage] = useState('');
@@ -263,7 +277,7 @@ function App() {
           sevenDayCount: sevenDayItems.length,
           total: sellerItems.reduce((sum, item) => sum + totalPrice(item), 0),
           nextEnding: endingSoon,
-          favorite: favoriteSellers.includes(seller),
+          favorite: favoriteSellerUsernames.has(seller),
         };
       })
       .sort((left, right) => {
@@ -273,6 +287,74 @@ function App() {
       })
       .slice(0, 12);
   }, [allItems, favoriteSellers, now]);
+
+  // Paniers vendeurs : agrege les cartes au statut in_basket / bid_planned, calcule
+  // les frais de port groupes et l'economie vs achat separe.
+  const baskets = useMemo(() => {
+    const groups = new Map<string, SourcingItem[]>();
+    for (const item of allItems) {
+      if (item.status !== 'in_basket' && item.status !== 'bid_planned') continue;
+      if (!item.seller_username) continue;
+      const list = groups.get(item.seller_username) ?? [];
+      list.push(item);
+      groups.set(item.seller_username, list);
+    }
+
+    return [...groups.entries()]
+      .map(([seller, sellerItems]) => {
+        sellerItems.sort((left, right) => {
+          const leftEnd = left.auction_end_at ? new Date(left.auction_end_at).getTime() : Number.POSITIVE_INFINITY;
+          const rightEnd = right.auction_end_at ? new Date(right.auction_end_at).getTime() : Number.POSITIVE_INFINITY;
+          return leftEnd - rightEnd;
+        });
+        const cardsTotal = sellerItems.reduce((sum, item) => sum + Number(item.price ?? 0), 0);
+        const shippingPerItem = sellerItems.reduce((sum, item) => sum + Number(item.shipping_price ?? 0), 0);
+        const favorite = favoriteByUsername.get(seller);
+        const groupedShipping =
+          favorite?.shipping_estimate !== null && favorite?.shipping_estimate !== undefined
+            ? favorite.shipping_estimate
+            : DEFAULT_SHIPPING;
+        const totalGrouped = cardsTotal + groupedShipping;
+        const totalSeparate = cardsTotal + shippingPerItem;
+        const savings = Math.max(0, totalSeparate - totalGrouped);
+        const nextEnding =
+          sellerItems
+            .filter((item) => item.auction_end_at && new Date(item.auction_end_at).getTime() > now)
+            .sort((a, b) => new Date(a.auction_end_at!).getTime() - new Date(b.auction_end_at!).getTime())[0] ?? null;
+        const watchlistIds = new Set(sellerItems.map((item) => item.watchlist_id));
+        const planned = sellerItems.filter((item) => item.status === 'bid_planned').length;
+        const maxBidsTotal = sellerItems.reduce(
+          (sum, item) => sum + (item.max_bid ?? Number(item.price ?? 0)),
+          0,
+        );
+        return {
+          seller,
+          items: sellerItems,
+          count: sellerItems.length,
+          plannedBids: planned,
+          watchlistCount: watchlistIds.size,
+          cardsTotal,
+          shippingPerItem,
+          groupedShipping,
+          totalGrouped,
+          totalSeparate,
+          savings,
+          maxBidsTotal,
+          nextEnding,
+          currency: sellerItems[0]?.currency ?? 'USD',
+          favorite: favoriteSellerUsernames.has(seller),
+          shippingIsCustom: favorite?.shipping_estimate !== null && favorite?.shipping_estimate !== undefined,
+        };
+      })
+      .sort((left, right) => {
+        // Urgence d'abord (fin proche), puis savings, puis taille panier
+        const leftEnd = left.nextEnding ? new Date(left.nextEnding.auction_end_at!).getTime() : Number.POSITIVE_INFINITY;
+        const rightEnd = right.nextEnding ? new Date(right.nextEnding.auction_end_at!).getTime() : Number.POSITIVE_INFINITY;
+        if (leftEnd !== rightEnd) return leftEnd - rightEnd;
+        if (right.savings !== left.savings) return right.savings - left.savings;
+        return right.count - left.count;
+      });
+  }, [allItems, favoriteByUsername, favoriteSellerUsernames, now]);
 
   const actionBoard = useMemo(() => {
     const activeItems = items.filter((item) => isActiveItem(item) && auctionBucket(item.auction_end_at, now) !== 'ended');
@@ -290,7 +372,7 @@ function App() {
           now,
           maxPrice,
           item.seller_username ? sellerCounts.get(item.seller_username) ?? 1 : 1,
-          item.seller_username ? favoriteSellers.includes(item.seller_username) : false,
+          item.seller_username ? favoriteSellerUsernames.has(item.seller_username) : false,
         ),
       }))
       .sort((left, right) => right.score - left.score);
@@ -322,7 +404,7 @@ function App() {
     now,
     maxPrice: selectedWatchlist?.max_price ?? null,
     sellerCount: item.seller_username ? actionBoard.sellerCounts.get(item.seller_username) ?? 1 : 1,
-    favoriteSeller: item.seller_username ? favoriteSellers.includes(item.seller_username) : false,
+    favoriteSeller: item.seller_username ? favoriteSellerUsernames.has(item.seller_username) : false,
   });
 
   async function load() {
@@ -333,7 +415,7 @@ function App() {
       apiFetch<SourcingItem[]>('/items'),
     ]);
     setWatchlists(nextWatchlists);
-    setFavoriteSellers(favorites.map((favorite) => favorite.seller_username));
+    setFavoriteSellers(favorites);
     const active = selectedId ?? nextWatchlists[0]?.id;
     setSelectedId(active ?? null);
     setAllItems(nextItems);
@@ -408,6 +490,17 @@ function App() {
     setAllItems((current) => current.map((item) => (item.id === itemId ? updated : item)));
   }
 
+  async function toggleBasket(item: SourcingItem) {
+    // Si bid_planned, on garde ce statut (l'utilisateur a planifie une enchere).
+    // Sinon, toggle in_basket / new.
+    if (item.status === 'bid_planned') {
+      await updateStatus(item.id, 'new');
+      return;
+    }
+    const next: SourcingItem['status'] = item.status === 'in_basket' ? 'new' : 'in_basket';
+    await updateStatus(item.id, next);
+  }
+
   async function removeWatchlist(id: string) {
     await apiFetch(`/watchlists/${id}`, { method: 'DELETE' });
     setWatchlists((current) => current.filter((watchlist) => watchlist.id !== id));
@@ -472,22 +565,71 @@ function App() {
   }
 
   async function toggleFavoriteSeller(seller: string) {
-    const isFav = favoriteSellers.includes(seller);
+    const isFav = favoriteSellerUsernames.has(seller);
+    const previous = favoriteSellers;
     // Mise a jour optimiste
-    setFavoriteSellers((current) => (isFav ? current.filter((item) => item !== seller) : [seller, ...current]));
+    if (isFav) {
+      setFavoriteSellers((current) => current.filter((favorite) => favorite.seller_username !== seller));
+    } else {
+      const optimistic: SellerFavorite = {
+        user_id: '',
+        seller_username: seller,
+        note: null,
+        shipping_estimate: null,
+        created_at: new Date().toISOString(),
+      };
+      setFavoriteSellers((current) => [optimistic, ...current]);
+    }
     try {
       if (isFav) {
         await apiFetch(`/seller-favorites/${encodeURIComponent(seller)}`, { method: 'DELETE' });
       } else {
-        await apiFetch('/seller-favorites', {
+        const created = await apiFetch<SellerFavorite>('/seller-favorites', {
           method: 'POST',
           body: JSON.stringify({ seller_username: seller }),
         });
+        setFavoriteSellers((current) =>
+          current.map((favorite) => (favorite.seller_username === seller ? created : favorite)),
+        );
       }
     } catch (err) {
-      // Rollback
-      setFavoriteSellers((current) => (isFav ? [seller, ...current] : current.filter((item) => item !== seller)));
+      setFavoriteSellers(previous);
       setError(err instanceof Error ? err.message : 'Erreur favori');
+    }
+  }
+
+  async function setSellerShipping(seller: string, value: number | null) {
+    // Cree d'abord le favori s'il n'existe pas
+    if (!favoriteSellerUsernames.has(seller)) {
+      try {
+        const created = await apiFetch<SellerFavorite>('/seller-favorites', {
+          method: 'POST',
+          body: JSON.stringify({ seller_username: seller, shipping_estimate: value }),
+        });
+        setFavoriteSellers((current) => [created, ...current]);
+        return;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Erreur favori');
+        return;
+      }
+    }
+    const previous = favoriteSellers;
+    setFavoriteSellers((current) =>
+      current.map((favorite) =>
+        favorite.seller_username === seller ? { ...favorite, shipping_estimate: value } : favorite,
+      ),
+    );
+    try {
+      const updated = await apiFetch<SellerFavorite>(`/seller-favorites/${encodeURIComponent(seller)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ shipping_estimate: value }),
+      });
+      setFavoriteSellers((current) =>
+        current.map((favorite) => (favorite.seller_username === seller ? updated : favorite)),
+      );
+    } catch (err) {
+      setFavoriteSellers(previous);
+      setError(err instanceof Error ? err.message : 'Erreur frais de port');
     }
   }
 
@@ -681,7 +823,7 @@ function App() {
                   item={item}
                   ctx={signalCtxFor(item)}
                   variant="compact"
-                  onWatch={(target) => updateStatus(target.id, 'watching')}
+                  onAddToBasket={(target) => toggleBasket(target)}
                   onIgnore={(target) => updateStatus(target.id, 'ignored')}
                   onPlanBid={planBid}
                   onOpenSeller={(seller) => openSellerPanel(seller)}
@@ -726,6 +868,72 @@ function App() {
               {stats.bought > 0 ? ` · ${stats.bought} achete${stats.bought > 1 ? 's' : ''}` : ''}
             </div>
 
+            {baskets.length > 0 && (
+              <section className="baskets-section">
+                <div className="section-title">
+                  <ShoppingBasket size={16} />
+                  <div>
+                    <span>Mes paniers en cours</span>
+                    <strong>{baskets.length} vendeur{baskets.length > 1 ? 's' : ''} - on optimise les frais de port</strong>
+                  </div>
+                </div>
+                <div className="baskets-grid">
+                  {baskets.map((basket) => {
+                    const urgentEnding = basket.nextEnding
+                      ? auctionUrgency(basket.nextEnding.auction_end_at, now)
+                      : '';
+                    return (
+                      <article className={`basket-card ${urgentEnding}`} key={basket.seller}>
+                        <div className="basket-head">
+                          <button className="basket-name" onClick={() => openSellerPanel(basket.seller)}>
+                            <Store size={14} /> {basket.seller}
+                          </button>
+                          {basket.favorite && <Star size={13} className="basket-fav" />}
+                        </div>
+                        <div className="basket-stats">
+                          <span>
+                            {basket.count} carte{basket.count > 1 ? 's' : ''}
+                            {basket.plannedBids > 0 ? ` (${basket.plannedBids} a encherir)` : ''}
+                          </span>
+                          {basket.watchlistCount > 1 && (
+                            <span className="basket-watchlists">{basket.watchlistCount} recherches</span>
+                          )}
+                        </div>
+                        <div className="basket-money">
+                          <div className="basket-row">
+                            <span>Cartes</span>
+                            <strong>{money(basket.cardsTotal, basket.currency)}</strong>
+                          </div>
+                          <div className="basket-row">
+                            <span>+ port estime</span>
+                            <strong>{money(basket.groupedShipping, basket.currency)}</strong>
+                          </div>
+                          <div className="basket-row total">
+                            <span>Total panier</span>
+                            <strong>{money(basket.totalGrouped, basket.currency)}</strong>
+                          </div>
+                          {basket.savings > 0 && (
+                            <div className="basket-row savings">
+                              <span>Economie vs achat separe</span>
+                              <strong>-{money(basket.savings, basket.currency)}</strong>
+                            </div>
+                          )}
+                        </div>
+                        {basket.nextEnding && (
+                          <div className={`basket-next ${urgentEnding}`}>
+                            <Clock size={12} /> Prochaine fin : {timeLeftLabel(basket.nextEnding.auction_end_at, now)}
+                          </div>
+                        )}
+                        <button className="basket-explore" onClick={() => openSellerPanel(basket.seller)}>
+                          Voir le panier
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
             <section className="action-board">
               <div className="action-lane priority">
                 <div className="lane-title">
@@ -742,7 +950,7 @@ function App() {
                     item={item}
                     ctx={signalCtxFor(item)}
                     variant="compact"
-                    onWatch={(target) => updateStatus(target.id, 'watching')}
+                    onAddToBasket={(target) => toggleBasket(target)}
                     onIgnore={(target) => updateStatus(target.id, 'ignored')}
                     onPlanBid={planBid}
                     onOpenSeller={(seller) => openSellerPanel(seller)}
@@ -754,8 +962,8 @@ function App() {
                 <div className="lane-title">
                   <Layers size={16} />
                   <div>
-                    <span>Panier</span>
-                    <strong>Vendeurs a concentrer (toutes recherches)</strong>
+                    <span>Vendeurs prometteurs</span>
+                    <strong>A explorer pour grouper les achats</strong>
                   </div>
                 </div>
                 {actionBoard.sellerMissions.length === 0 && <div className="lane-empty">Pas encore de vendeur assez dense.</div>}
@@ -897,7 +1105,7 @@ function App() {
             </div>
             <div className="panel-actions">
               <button
-                className={favoriteSellers.includes(sellerPanel.seller) ? 'star-button selected' : 'star-button'}
+                className={favoriteSellerUsernames.has(sellerPanel.seller) ? 'star-button selected' : 'star-button'}
                 onClick={() => toggleFavoriteSeller(sellerPanel.seller)}
                 title="Favori vendeur"
               >
@@ -907,65 +1115,153 @@ function App() {
             </div>
           </div>
 
-          <div className="seller-summary">
-            <div>
-              <span>Cartes vues</span>
-              <strong>{sellerBasket.count}</strong>
-            </div>
-            <div>
-              <span>Panier potentiel</span>
-              <strong>{money(sellerBasket.total, sellerBasket.currency)}</strong>
-            </div>
-          </div>
+          {(() => {
+            const basket = baskets.find((b) => b.seller === sellerPanel.seller);
+            const basketItems = sellerLocalItems.filter(
+              (item) => item.status === 'in_basket' || item.status === 'bid_planned',
+            );
+            const otherItems = sellerLocalItems.filter(
+              (item) => item.status !== 'in_basket' && item.status !== 'bid_planned',
+            );
+            const fav = favoriteByUsername.get(sellerPanel.seller);
+            const shippingValue =
+              fav?.shipping_estimate !== null && fav?.shipping_estimate !== undefined
+                ? String(fav.shipping_estimate)
+                : '';
+            return (
+              <>
+                <div className="shipping-edit">
+                  <label htmlFor={`shipping-${sellerPanel.seller}`}>Frais de port estimes (groupes)</label>
+                  <div className="shipping-edit-row">
+                    <input
+                      id={`shipping-${sellerPanel.seller}`}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder={`defaut ${DEFAULT_SHIPPING}`}
+                      defaultValue={shippingValue}
+                      onBlur={(event) => {
+                        const raw = event.target.value.trim();
+                        const parsed = raw === '' ? null : Number(raw);
+                        if (parsed !== null && (Number.isNaN(parsed) || parsed < 0)) return;
+                        setSellerShipping(sellerPanel.seller, parsed);
+                      }}
+                    />
+                    <span className="shipping-currency">{basket?.currency ?? 'USD'}</span>
+                  </div>
+                </div>
 
-          {sellerBasket.nextEnding && (
-            <div className="seller-next">
-              <span>Prochaine fin</span>
-              <strong>{timeLeftLabel(sellerBasket.nextEnding.auction_end_at, now)} - {sellerBasket.nextEnding.title}</strong>
-            </div>
-          )}
-
-          {sellerLocalItems.length > 0 && (
-            <>
-              <div className="seller-section-title">
-                <strong>Mes cartes chez ce vendeur ({sellerLocalItems.length})</strong>
-                <a href={`https://www.ebay.com/sch/i.html?_ssn=${encodeURIComponent(sellerPanel.seller)}&LH_Auction=1`} target="_blank" rel="noreferrer">
-                  Toutes ses ventes eBay <ExternalLink size={12} />
-                </a>
-              </div>
-              <div className="seller-items">
-                {sellerLocalItems.map((item) => {
-                  const sourceWatchlist = watchlistById.get(item.watchlist_id);
-                  return (
-                    <article className="seller-item" key={item.id}>
-                      <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
-                      <div>
-                        <strong>{item.title}</strong>
-                        <div className="meta">
-                          <span>{money(totalPrice(item), item.currency)}</span>
-                          {item.auction_end_at && (
-                            <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
-                              <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
-                            </span>
-                          )}
-                          {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} bid{item.bid_count > 1 ? 's' : ''}</span> : null}
-                          {sourceWatchlist && (
-                            <span className="origin-tag" title={sourceWatchlist.query}>
-                              via {sourceWatchlist.name}
-                            </span>
-                          )}
-                          {item.status !== 'new' && (
-                            <span className={`status-tag status-${item.status}`}>{statusLabels[item.status]}</span>
-                          )}
-                        </div>
-                        <a href={item.url} target="_blank" rel="noreferrer">Ouvrir eBay</a>
+                {basket ? (
+                  <section className="seller-basket-block">
+                    <div className="seller-section-title">
+                      <strong>Mon panier ({basket.count})</strong>
+                      <span>{basket.plannedBids > 0 ? `${basket.plannedBids} a encherir` : ''}</span>
+                    </div>
+                    <div className="basket-money compact">
+                      <div className="basket-row">
+                        <span>Cartes</span>
+                        <strong>{money(basket.cardsTotal, basket.currency)}</strong>
                       </div>
-                    </article>
-                  );
-                })}
-              </div>
-            </>
-          )}
+                      <div className="basket-row">
+                        <span>+ port estime</span>
+                        <strong>{money(basket.groupedShipping, basket.currency)}</strong>
+                      </div>
+                      <div className="basket-row total">
+                        <span>Total panier</span>
+                        <strong>{money(basket.totalGrouped, basket.currency)}</strong>
+                      </div>
+                      {basket.savings > 0 && (
+                        <div className="basket-row savings">
+                          <span>Economie vs achats separes</span>
+                          <strong>-{money(basket.savings, basket.currency)}</strong>
+                        </div>
+                      )}
+                    </div>
+                    <div className="seller-items">
+                      {basketItems.map((item) => {
+                        const sourceWatchlist = watchlistById.get(item.watchlist_id);
+                        return (
+                          <article className="seller-item in-basket" key={item.id}>
+                            <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
+                            <div>
+                              <strong>{item.title}</strong>
+                              <div className="meta">
+                                <span>{money(totalPrice(item), item.currency)}</span>
+                                {item.auction_end_at && (
+                                  <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
+                                    <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
+                                  </span>
+                                )}
+                                {item.status === 'bid_planned' && item.max_bid && (
+                                  <span className="max-bid">max {money(item.max_bid, item.currency)}</span>
+                                )}
+                                {sourceWatchlist && (
+                                  <span className="origin-tag">via {sourceWatchlist.name}</span>
+                                )}
+                              </div>
+                              <div className="seller-item-actions">
+                                <button className="ghost mini" onClick={() => toggleBasket(item)}>Retirer</button>
+                                <a href={item.url} target="_blank" rel="noreferrer">eBay</a>
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ) : (
+                  <div className="empty-state compact">
+                    Pas encore de panier chez ce vendeur. Ajoute des cartes ci-dessous.
+                  </div>
+                )}
+
+                {otherItems.length > 0 && (
+                  <>
+                    <div className="seller-section-title">
+                      <strong>Autres cartes vues ({otherItems.length})</strong>
+                      <a href={`https://www.ebay.com/sch/i.html?_ssn=${encodeURIComponent(sellerPanel.seller)}&LH_Auction=1`} target="_blank" rel="noreferrer">
+                        Toutes ses ventes eBay <ExternalLink size={12} />
+                      </a>
+                    </div>
+                    <div className="seller-items">
+                      {otherItems.map((item) => {
+                        const sourceWatchlist = watchlistById.get(item.watchlist_id);
+                        return (
+                          <article className="seller-item" key={item.id}>
+                            <div className="thumb small">{item.image_url ? <img src={item.image_url} alt="" /> : <Eye size={20} />}</div>
+                            <div>
+                              <strong>{item.title}</strong>
+                              <div className="meta">
+                                <span>{money(totalPrice(item), item.currency)}</span>
+                                {item.auction_end_at && (
+                                  <span className={`countdown ${auctionUrgency(item.auction_end_at, now)}`}>
+                                    <Clock size={13} /> {timeLeftLabel(item.auction_end_at, now)}
+                                  </span>
+                                )}
+                                {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} bid{item.bid_count > 1 ? 's' : ''}</span> : null}
+                                {sourceWatchlist && (
+                                  <span className="origin-tag">via {sourceWatchlist.name}</span>
+                                )}
+                                {item.status !== 'new' && (
+                                  <span className={`status-tag status-${item.status}`}>{statusLabels[item.status]}</span>
+                                )}
+                              </div>
+                              <div className="seller-item-actions">
+                                <button className="primary mini" onClick={() => toggleBasket(item)}>
+                                  <ShoppingBasket size={12} /> Au panier
+                                </button>
+                                <a href={item.url} target="_blank" rel="noreferrer">eBay</a>
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </>
+            );
+          })()}
 
           <div className="seller-section-title">
             <strong>Elargir sur eBay</strong>

@@ -32,12 +32,15 @@ class WatchlistUpdate(BaseModel):
     active: bool | None = None
 
 
+_ITEM_STATUSES = Literal["new", "watching", "in_basket", "bid_planned", "ignored", "bought", "too_expensive"]
+
+
 class ItemStatusUpdate(BaseModel):
-    status: Literal["new", "watching", "bid_planned", "ignored", "bought", "too_expensive"]
+    status: _ITEM_STATUSES
 
 
 class ItemUpdate(BaseModel):
-    status: Literal["new", "watching", "bid_planned", "ignored", "bought", "too_expensive"] | None = None
+    status: _ITEM_STATUSES | None = None
     max_bid: float | None = Field(default=None, ge=0)
     note: str | None = Field(default=None, max_length=2000)
 
@@ -45,9 +48,16 @@ class ItemUpdate(BaseModel):
 class SellerFavoriteCreate(BaseModel):
     seller_username: str = Field(min_length=1, max_length=120)
     note: str | None = Field(default=None, max_length=500)
+    shipping_estimate: float | None = Field(default=None, ge=0)
+
+
+class SellerFavoriteUpdate(BaseModel):
+    note: str | None = Field(default=None, max_length=500)
+    shipping_estimate: float | None = Field(default=None, ge=0)
 
 
 OPTIONAL_ITEM_COLUMNS = {"auction_end_at", "bid_count", "match_query", "match_quality", "max_bid", "note"}
+OPTIONAL_FAVORITE_COLUMNS = {"shipping_estimate"}
 
 
 def _user_id(user: dict) -> str:
@@ -56,6 +66,15 @@ def _user_id(user: dict) -> str:
 
 def _without_optional_item_columns(payload: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in payload.items() if key not in OPTIONAL_ITEM_COLUMNS}
+
+
+def _without_optional_favorite_columns(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if key not in OPTIONAL_FAVORITE_COLUMNS}
+
+
+def _is_missing_optional_favorite_column(exc: HTTPException) -> bool:
+    detail = str(exc.detail)
+    return exc.status_code == 400 and any(column in detail for column in OPTIONAL_FAVORITE_COLUMNS)
 
 
 def _is_missing_optional_column(exc: HTTPException) -> bool:
@@ -185,13 +204,56 @@ async def list_seller_favorites(user: dict = Depends(current_user)):
 async def add_seller_favorite(body: SellerFavoriteCreate, user: dict = Depends(current_user)):
     payload = body.model_dump()
     payload["user_id"] = _user_id(user)
-    rows = await request(
-        "POST",
-        "sourcing_seller_favorites",
-        json=payload,
-        prefer="return=representation,resolution=merge-duplicates",
-    )
+    try:
+        rows = await request(
+            "POST",
+            "sourcing_seller_favorites",
+            json=payload,
+            prefer="return=representation,resolution=merge-duplicates",
+        )
+    except HTTPException as exc:
+        if not _is_missing_optional_favorite_column(exc):
+            raise
+        rows = await request(
+            "POST",
+            "sourcing_seller_favorites",
+            json=_without_optional_favorite_columns(payload),
+            prefer="return=representation,resolution=merge-duplicates",
+        )
     return rows[0] if rows else payload
+
+
+@router.patch("/seller-favorites/{seller_username}")
+async def update_seller_favorite(seller_username: str, body: SellerFavoriteUpdate, user: dict = Depends(current_user)):
+    payload = {key: value for key, value in body.model_dump().items() if value is not None}
+    if not payload:
+        raise HTTPException(status_code=400, detail="empty_update")
+    user_id = _user_id(user)
+    params = {"seller_username": f"eq.{seller_username}", "user_id": f"eq.{user_id}"}
+    try:
+        rows = await request(
+            "PATCH",
+            "sourcing_seller_favorites",
+            params=params,
+            json=payload,
+            prefer="return=representation",
+        )
+    except HTTPException as exc:
+        if not _is_missing_optional_favorite_column(exc):
+            raise
+        cleaned = _without_optional_favorite_columns(payload)
+        if not cleaned:
+            raise HTTPException(status_code=400, detail="migration_required")
+        rows = await request(
+            "PATCH",
+            "sourcing_seller_favorites",
+            params=params,
+            json=cleaned,
+            prefer="return=representation",
+        )
+    if not rows:
+        raise HTTPException(status_code=404, detail="favorite_not_found")
+    return rows[0]
 
 
 @router.delete("/seller-favorites/{seller_username}", status_code=204)

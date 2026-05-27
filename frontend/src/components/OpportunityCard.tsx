@@ -1,4 +1,4 @@
-import { Clock, ExternalLink, Eye, Store } from 'lucide-react';
+import { Clock, ExternalLink, Eye, Store, ShoppingBasket } from 'lucide-react';
 import type { SourcingItem } from '../types';
 import {
   auctionUrgency,
@@ -18,7 +18,7 @@ type Props = {
   item: SourcingItem;
   ctx: SignalContext;
   variant?: 'compact' | 'full';
-  onWatch?: (item: SourcingItem) => void;
+  onAddToBasket?: (item: SourcingItem) => void;
   onIgnore?: (item: SourcingItem) => void;
   onPlanBid?: (item: SourcingItem) => void;
   onOpenSeller?: (seller: string) => void;
@@ -30,20 +30,25 @@ type Props = {
  *   2. Titre (1-2 lignes)
  *   3. Raisons de priorité (vert)
  *   4. Risques (orange)
- *   5. Actions (Suivre / Ignorer / eBay / Vendeur)
+ *   5. Actions
  *
- * Pas de score numérique exposé : on traduit le score en raisons humaines.
+ * Action principale : "Au panier" (status=in_basket). Le but est de constituer
+ * un panier vendeur pour optimiser les frais de port en groupant les achats.
+ *
+ * "Encherir" met le statut à bid_planned + max_bid. Pour les enchères que tu vas
+ * disputer activement.
  */
-export function OpportunityCard({ item, ctx, variant = 'full', onWatch, onIgnore, onPlanBid, onOpenSeller }: Props) {
+export function OpportunityCard({ item, ctx, variant = 'full', onAddToBasket, onIgnore, onPlanBid, onOpenSeller }: Props) {
   const reasons = priorityReasons(item, ctx);
   const risks = riskFlags(item, ctx);
   const urgency = auctionUrgency(item.auction_end_at, ctx.now);
   const timeLeft = timeLeftLabel(item.auction_end_at, ctx.now);
   const price = totalPrice(item);
+  const inBasket = item.status === 'in_basket' || item.status === 'bid_planned';
   const planned = item.status === 'bid_planned';
 
   return (
-    <article className={`opp-card ${variant}${planned ? ' planned' : ''}`}>
+    <article className={`opp-card ${variant}${inBasket ? ' in-basket' : ''}${planned ? ' planned' : ''}`}>
       {variant === 'full' && (
         <div className="opp-thumb">
           {item.image_url ? <img src={item.image_url} alt="" loading="lazy" /> : <Eye size={24} />}
@@ -90,20 +95,27 @@ export function OpportunityCard({ item, ctx, variant = 'full', onWatch, onIgnore
             <span className="opp-seller muted">vendeur inconnu</span>
           )}
           {item.country && <span className="opp-country">{item.country}</span>}
+          {planned && item.max_bid && (
+            <span className="max-bid">max {money(item.max_bid, item.currency)}</span>
+          )}
         </div>
 
         <div className="opp-actions">
+          {onAddToBasket && (
+            <button
+              type="button"
+              className={inBasket ? 'opp-basket selected' : 'opp-basket'}
+              onClick={() => onAddToBasket(item)}
+            >
+              <ShoppingBasket size={14} /> {inBasket ? 'Retirer' : 'Au panier'}
+            </button>
+          )}
           {onPlanBid && (
             <button type="button" className="opp-bid" onClick={() => onPlanBid(item)}>
-              {planned && item.max_bid ? `Max ${money(item.max_bid, item.currency)}` : 'Encherir'}
+              {planned ? 'Modifier max' : 'Encherir'}
             </button>
           )}
-          {onWatch && !planned && (
-            <button type="button" onClick={() => onWatch(item)}>
-              Suivre
-            </button>
-          )}
-          {onIgnore && (
+          {onIgnore && !inBasket && (
             <button type="button" className="ghost" onClick={() => onIgnore(item)}>
               Ignorer
             </button>
