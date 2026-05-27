@@ -140,12 +140,33 @@ button:disabled {
   font-size: 13px;
 }
 
-.icon-button,
-.ghost {
+.icon-button {
   width: 38px;
   padding: 0;
   background: #24282c;
   color: #f4f1eb;
+}
+
+.ghost {
+  background: transparent;
+  color: #d8d6cf;
+  border: 1px solid #393d42;
+  padding: 8px 14px;
+}
+
+.ghost:hover {
+  border-color: #5a5d62;
+  color: #f4f1eb;
+}
+
+.ghost.danger {
+  border-color: #5a3636;
+  color: #ff938a;
+}
+
+.ghost.danger:hover {
+  border-color: #ff938a;
+  color: #ff938a;
 }
 
 .danger {
