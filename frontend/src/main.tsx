@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CalendarDays, Clock, ExternalLink, Eye, RefreshCw, Search, Star, Store, Trash2 } from 'lucide-react';
+import { CalendarDays, Clock, ExternalLink, Eye, Flame, Layers, RefreshCw, Search, Star, Store, Target, Trash2 } from 'lucide-react';
 import { apiFetch } from './api/client';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
@@ -63,6 +63,13 @@ function totalPrice(item: SourcingItem) {
   return Number(item.price ?? 0) + Number(item.shipping_price ?? 0);
 }
 
+function hoursUntil(value: string | null, now: number) {
+  if (!value) return null;
+  const end = new Date(value).getTime();
+  if (!Number.isFinite(end)) return null;
+  return (end - now) / 36e5;
+}
+
 function timeLeftLabel(value: string | null, now: number) {
   if (!value) return null;
   const diff = new Date(value).getTime() - now;
@@ -106,6 +113,17 @@ function auctionBucket(value: string | null, now: number): TimeFilter {
   if (end < afterTomorrow.getTime()) return 'tomorrow';
   if (end <= now + 7 * 24 * 60 * 60 * 1000) return 'week';
   return 'all';
+}
+
+function opportunityScore(item: SourcingItem, now: number, maxPrice: number | null, sellerCount = 1, favoriteSeller = false) {
+  const price = totalPrice(item);
+  const priceBase = maxPrice && maxPrice > 0 ? Math.max(0, 40 - (price / maxPrice) * 26) : Math.max(0, 34 - price / 4);
+  const hoursLeft = hoursUntil(item.auction_end_at, now);
+  const urgency = hoursLeft === null ? 2 : hoursLeft <= 0 ? -30 : hoursLeft <= 6 ? 30 : hoursLeft <= 24 ? 22 : hoursLeft <= 72 ? 12 : 5;
+  const sellerBoost = Math.min(18, Math.max(0, sellerCount - 1) * 6);
+  const bidPenalty = item.bid_count ? Math.min(12, item.bid_count * 1.5) : 0;
+  const favoriteBoost = favoriteSeller ? 8 : 0;
+  return Math.round(priceBase + urgency + sellerBoost + favoriteBoost - bidPenalty);
 }
 
 function LoginView() {
@@ -241,6 +259,50 @@ function App() {
       })
       .slice(0, 8);
   }, [favoriteSellers, items, now]);
+
+  const actionBoard = useMemo(() => {
+    const activeItems = items.filter((item) => isActiveItem(item) && auctionBucket(item.auction_end_at, now) !== 'ended');
+    const sellerCounts = new Map<string, number>();
+    for (const item of activeItems) {
+      if (!item.seller_username) continue;
+      sellerCounts.set(item.seller_username, (sellerCounts.get(item.seller_username) ?? 0) + 1);
+    }
+    const maxPrice = selectedWatchlist?.max_price ?? null;
+    const scored = activeItems
+      .map((item) => ({
+        item,
+        score: opportunityScore(
+          item,
+          now,
+          maxPrice,
+          item.seller_username ? sellerCounts.get(item.seller_username) ?? 1 : 1,
+          item.seller_username ? favoriteSellers.includes(item.seller_username) : false,
+        ),
+      }))
+      .sort((left, right) => right.score - left.score);
+
+    const urgent = scored
+      .filter(({ item }) => {
+        const hoursLeft = hoursUntil(item.auction_end_at, now);
+        return hoursLeft !== null && hoursLeft > 0 && hoursLeft <= 48;
+      })
+      .slice(0, 5);
+
+    const sellerMissions = sellerGroups
+      .filter((group) => group.count >= 2 || group.favorite)
+      .map((group) => ({
+        ...group,
+        score: Math.round(group.count * 14 + group.sevenDayCount * 12 + (group.favorite ? 20 : 0) - group.total / 20),
+      }))
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 4);
+
+    const clean = items
+      .filter((item) => item.status === 'new' && (auctionBucket(item.auction_end_at, now) === 'ended' || !item.image_url || !item.seller_username))
+      .slice(0, 5);
+
+    return { urgent, sellerMissions, clean };
+  }, [favoriteSellers, items, now, selectedWatchlist?.max_price, sellerGroups]);
 
   async function load() {
     setError('');
@@ -490,6 +552,71 @@ function App() {
               </div>
               <span>Dernier scan : {dateLabel(selectedWatchlist.last_scan_at)}</span>
             </div>
+
+            <section className="action-board">
+              <div className="action-lane priority">
+                <div className="lane-title">
+                  <Flame size={16} />
+                  <div>
+                    <span>Maintenant</span>
+                    <strong>A trancher avant la fin</strong>
+                  </div>
+                </div>
+                {actionBoard.urgent.length === 0 && <div className="lane-empty">Rien d'urgent dans les 48h.</div>}
+                {actionBoard.urgent.map(({ item, score }) => (
+                  <article className="action-item" key={item.id}>
+                    <div>
+                      <strong>{item.title}</strong>
+                      <span>{money(totalPrice(item), item.currency)} · {timeLeftLabel(item.auction_end_at, now)} · score {score}</span>
+                    </div>
+                    <div className="mini-actions">
+                      <button onClick={() => updateStatus(item.id, 'watching')}>Suivre</button>
+                      <a href={item.url} target="_blank" rel="noreferrer">eBay</a>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              <div className="action-lane">
+                <div className="lane-title">
+                  <Layers size={16} />
+                  <div>
+                    <span>Panier</span>
+                    <strong>Vendeurs a concentrer</strong>
+                  </div>
+                </div>
+                {actionBoard.sellerMissions.length === 0 && <div className="lane-empty">Pas encore de vendeur assez dense.</div>}
+                {actionBoard.sellerMissions.map((group) => (
+                  <article className="action-item seller-mission" key={group.seller}>
+                    <div>
+                      <strong>{group.seller}</strong>
+                      <span>{group.count} cartes · {group.sevenDayCount} fins J+7 · {money(group.total, group.items[0]?.currency ?? 'USD')}</span>
+                    </div>
+                    <button onClick={() => openSellerPanel(group.seller, selectedWatchlist.query)}>Explorer</button>
+                  </article>
+                ))}
+              </div>
+
+              <div className="action-lane">
+                <div className="lane-title">
+                  <Target size={16} />
+                  <div>
+                    <span>Menage</span>
+                    <strong>A sortir du radar</strong>
+                  </div>
+                </div>
+                {actionBoard.clean.length === 0 && <div className="lane-empty">Rien a nettoyer.</div>}
+                {actionBoard.clean.map((item) => (
+                  <article className="action-item" key={item.id}>
+                    <div>
+                      <strong>{item.title}</strong>
+                      <span>{auctionBucket(item.auction_end_at, now) === 'ended' ? 'terminee' : !item.image_url ? 'sans image' : 'vendeur inconnu'}</span>
+                    </div>
+                    <button onClick={() => updateStatus(item.id, 'ignored')}>Ignorer</button>
+                  </article>
+                ))}
+              </div>
+            </section>
 
             {sellerGroups.length > 0 && (
               <section className="seller-dashboard">

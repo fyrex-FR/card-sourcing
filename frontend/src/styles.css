@@ -298,6 +298,103 @@ button:disabled {
   white-space: nowrap;
 }
 
+.action-board {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.action-lane {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  border: 1px solid #292d31;
+  border-radius: 8px;
+  background: #15181b;
+  padding: 12px;
+}
+
+.action-lane.priority {
+  border-color: #7a4133;
+  background: #1c1715;
+}
+
+.lane-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.lane-title svg {
+  color: #e2b14f;
+  flex: 0 0 auto;
+}
+
+.lane-title div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.lane-title span,
+.action-item span,
+.lane-empty {
+  color: #a9aaa7;
+  font-size: 12px;
+}
+
+.lane-title strong {
+  font-size: 14px;
+}
+
+.action-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid #292d31;
+  padding-top: 9px;
+}
+
+.action-item div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.action-item strong,
+.action-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-item strong {
+  font-size: 13px;
+}
+
+.action-item button,
+.mini-actions button {
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.mini-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.seller-mission button {
+  background: #24282c;
+  color: #f4f1eb;
+}
+
 .filter-row {
   display: flex;
   flex-wrap: wrap;
@@ -712,6 +809,10 @@ a {
   .insight-strip {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .action-board {
+    grid-template-columns: 1fr;
   }
 }
 
