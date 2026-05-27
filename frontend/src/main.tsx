@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Clock, ExternalLink, Eye, RefreshCw, Search, Store, Trash2 } from 'lucide-react';
+import { CalendarDays, Clock, ExternalLink, Eye, RefreshCw, Search, Star, Store, Trash2 } from 'lucide-react';
 import { apiFetch } from './api/client';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
@@ -16,6 +16,7 @@ type FormState = {
 };
 
 type StatusFilter = 'all' | SourcingItem['status'];
+type TimeFilter = 'all' | 'today' | 'tomorrow' | 'week' | 'ended' | 'undated';
 
 const initialForm: FormState = {
   name: '',
@@ -37,6 +38,15 @@ const buyingOptionLabels: Record<Watchlist['buying_option'], string> = {
   ALL: 'tout',
   AUCTION: 'encheres',
   FIXED_PRICE: 'achat immediat',
+};
+
+const timeFilterLabels: Record<TimeFilter, string> = {
+  all: 'toutes fins',
+  today: "aujourd'hui",
+  tomorrow: 'demain',
+  week: '7 jours',
+  ended: 'terminees',
+  undated: 'sans date',
 };
 
 function money(value: number | null, currency = 'USD') {
@@ -78,6 +88,26 @@ function auctionUrgency(value: string | null, now: number) {
   return '';
 }
 
+function isActiveItem(item: SourcingItem) {
+  return item.status === 'new' || item.status === 'watching';
+}
+
+function auctionBucket(value: string | null, now: number): TimeFilter {
+  if (!value) return 'undated';
+  const end = new Date(value).getTime();
+  if (!Number.isFinite(end)) return 'undated';
+  if (end <= now) return 'ended';
+  const current = new Date(now);
+  const tomorrow = new Date(current);
+  tomorrow.setHours(24, 0, 0, 0);
+  const afterTomorrow = new Date(tomorrow);
+  afterTomorrow.setDate(afterTomorrow.getDate() + 1);
+  if (end < tomorrow.getTime()) return 'today';
+  if (end < afterTomorrow.getTime()) return 'tomorrow';
+  if (end <= now + 7 * 24 * 60 * 60 * 1000) return 'week';
+  return 'all';
+}
+
 function LoginView() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -115,6 +145,14 @@ function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+  const [favoriteSellers, setFavoriteSellers] = useState<string[]>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem('card-sourcing:favorites') ?? '[]');
+    } catch {
+      return [];
+    }
+  });
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [scanMessage, setScanMessage] = useState('');
@@ -134,17 +172,22 @@ function App() {
   );
 
   const visibleItems = useMemo(() => {
-    const filtered = statusFilter === 'all' ? items : items.filter((item) => item.status === statusFilter);
+    const filtered = items.filter((item) => {
+      if (statusFilter !== 'all' && item.status !== statusFilter) return false;
+      if (timeFilter === 'all') return true;
+      const bucket = auctionBucket(item.auction_end_at, now);
+      return timeFilter === 'week' ? bucket === 'today' || bucket === 'tomorrow' || bucket === 'week' : bucket === timeFilter;
+    });
     return [...filtered].sort((left, right) => {
       const leftEnd = left.auction_end_at ? new Date(left.auction_end_at).getTime() : Number.POSITIVE_INFINITY;
       const rightEnd = right.auction_end_at ? new Date(right.auction_end_at).getTime() : Number.POSITIVE_INFINITY;
       if (leftEnd !== rightEnd) return leftEnd - rightEnd;
       return totalPrice(left) - totalPrice(right);
     });
-  }, [items, statusFilter]);
+  }, [items, now, statusFilter, timeFilter]);
 
   const stats = useMemo(() => {
-    const active = items.filter((item) => item.status === 'new' || item.status === 'watching');
+    const active = items.filter(isActiveItem);
     const bought = items.filter((item) => item.status === 'bought');
     const cheapest = active.reduce<SourcingItem | null>((best, item) => (!best || totalPrice(item) < totalPrice(best) ? item : best), null);
     const nextEnding = active
@@ -160,6 +203,44 @@ function App() {
       potentialSpend: active.reduce((sum, item) => sum + totalPrice(item), 0),
     };
   }, [items, now]);
+
+  const sellerGroups = useMemo(() => {
+    const groups = new Map<string, SourcingItem[]>();
+    for (const item of items) {
+      if (!item.seller_username || !isActiveItem(item)) continue;
+      const bucket = auctionBucket(item.auction_end_at, now);
+      if (bucket === 'ended') continue;
+      const sellerItems = groups.get(item.seller_username) ?? [];
+      sellerItems.push(item);
+      groups.set(item.seller_username, sellerItems);
+    }
+
+    return [...groups.entries()]
+      .map(([seller, sellerItems]) => {
+        const endingSoon = sellerItems
+          .filter((item) => item.auction_end_at)
+          .sort((left, right) => new Date(left.auction_end_at!).getTime() - new Date(right.auction_end_at!).getTime())[0] ?? null;
+        const sevenDayItems = sellerItems.filter((item) => {
+          const bucket = auctionBucket(item.auction_end_at, now);
+          return bucket === 'today' || bucket === 'tomorrow' || bucket === 'week';
+        });
+        return {
+          seller,
+          items: sellerItems,
+          count: sellerItems.length,
+          sevenDayCount: sevenDayItems.length,
+          total: sellerItems.reduce((sum, item) => sum + totalPrice(item), 0),
+          nextEnding: endingSoon,
+          favorite: favoriteSellers.includes(seller),
+        };
+      })
+      .sort((left, right) => {
+        if (left.favorite !== right.favorite) return left.favorite ? -1 : 1;
+        if (left.sevenDayCount !== right.sevenDayCount) return right.sevenDayCount - left.sevenDayCount;
+        return right.total - left.total;
+      })
+      .slice(0, 8);
+  }, [favoriteSellers, items, now]);
 
   async function load() {
     setError('');
@@ -180,6 +261,10 @@ function App() {
     const timer = window.setInterval(() => setNow(Date.now()), 30000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem('card-sourcing:favorites', JSON.stringify(favoriteSellers));
+  }, [favoriteSellers]);
 
   useEffect(() => {
     if (!session || !selectedId) return;
@@ -278,6 +363,12 @@ function App() {
     } catch (err) {
       setSellerPanel({ seller: cleanSeller, query: cleanQuery, loading: false, error: err instanceof Error ? err.message : 'Erreur inconnue', items: [], total: 0 });
     }
+  }
+
+  function toggleFavoriteSeller(seller: string) {
+    setFavoriteSellers((current) => (
+      current.includes(seller) ? current.filter((item) => item !== seller) : [seller, ...current]
+    ));
   }
 
   const sellerBasket = useMemo(() => {
@@ -400,6 +491,43 @@ function App() {
               <span>Dernier scan : {dateLabel(selectedWatchlist.last_scan_at)}</span>
             </div>
 
+            {sellerGroups.length > 0 && (
+              <section className="seller-dashboard">
+                <div className="section-title">
+                  <div>
+                    <span>Panier vendeur</span>
+                    <strong>Vendeurs actifs sur cette recherche</strong>
+                  </div>
+                  <small>{sellerGroups.length} vendeur{sellerGroups.length > 1 ? 's' : ''} avec cartes actives</small>
+                </div>
+                <div className="seller-group-grid">
+                  {sellerGroups.map((group) => (
+                    <article className={group.favorite ? 'seller-group favorite' : 'seller-group'} key={group.seller}>
+                      <div className="seller-group-head">
+                        <button className="seller-name" onClick={() => openSellerPanel(group.seller, selectedWatchlist.query)}>
+                          <Store size={15} /> {group.seller}
+                        </button>
+                        <button className={group.favorite ? 'star-button selected' : 'star-button'} onClick={() => toggleFavoriteSeller(group.seller)} title="Favori vendeur">
+                          <Star size={15} />
+                        </button>
+                      </div>
+                      <div className="seller-group-stats">
+                        <span>{group.count} suivie{group.count > 1 ? 's' : ''}</span>
+                        <span>{group.sevenDayCount} fin J+7</span>
+                        <strong>{money(group.total, group.items[0]?.currency ?? 'USD')}</strong>
+                      </div>
+                      {group.nextEnding && (
+                        <button className="seller-group-next" onClick={() => openSellerPanel(group.seller, selectedWatchlist.query)}>
+                          <CalendarDays size={14} />
+                          <span>{timeLeftLabel(group.nextEnding.auction_end_at, now)} - {group.nextEnding.title}</span>
+                        </button>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
+
             <div className="filter-row">
               {(['all', 'new', 'watching', 'bought', 'too_expensive', 'ignored'] as const).map((status) => (
                 <button
@@ -408,6 +536,18 @@ function App() {
                   onClick={() => setStatusFilter(status)}
                 >
                   {status === 'all' ? 'tout' : statusLabels[status]}
+                </button>
+              ))}
+            </div>
+
+            <div className="filter-row timeline-filters">
+              {(['all', 'today', 'tomorrow', 'week', 'ended', 'undated'] as const).map((filter) => (
+                <button
+                  key={filter}
+                  className={timeFilter === filter ? 'filter selected' : 'filter'}
+                  onClick={() => setTimeFilter(filter)}
+                >
+                  {timeFilterLabels[filter]}
                 </button>
               ))}
             </div>
@@ -433,7 +573,7 @@ function App() {
                   {item.bid_count !== null && item.bid_count !== undefined ? <span>{item.bid_count} enchere{item.bid_count > 1 ? 's' : ''}</span> : null}
                   {item.match_quality === 'partial' && item.match_query ? <span>match partiel: {item.match_query}</span> : null}
                   {item.seller_username ? (
-                    <button className="seller-link" onClick={() => openSellerPanel(item.seller_username ?? '', 'nba card')}>
+                    <button className="seller-link" onClick={() => openSellerPanel(item.seller_username ?? '', selectedWatchlist?.query ?? 'nba card')}>
                       {item.seller_username}
                     </button>
                   ) : <span>vendeur inconnu</span>}
@@ -448,7 +588,7 @@ function App() {
                 </div>
                 <div className="card-actions">
                   {item.seller_username && (
-                    <button className="secondary-action" onClick={() => openSellerPanel(item.seller_username ?? '', 'nba card')}>
+                    <button className="secondary-action" onClick={() => openSellerPanel(item.seller_username ?? '', selectedWatchlist?.query ?? 'nba card')}>
                       <Store size={15} /> Voir vendeur
                     </button>
                   )}
@@ -473,7 +613,12 @@ function App() {
               <span>Vendeur</span>
               <strong>{sellerPanel.seller}</strong>
             </div>
-            <button className="ghost" onClick={() => setSellerPanel(null)}>Fermer</button>
+            <div className="panel-actions">
+              <button className={favoriteSellers.includes(sellerPanel.seller) ? 'star-button selected' : 'star-button'} onClick={() => toggleFavoriteSeller(sellerPanel.seller)} title="Favori vendeur">
+                <Star size={15} />
+              </button>
+              <button className="ghost" onClick={() => setSellerPanel(null)}>Fermer</button>
+            </div>
           </div>
 
           <form

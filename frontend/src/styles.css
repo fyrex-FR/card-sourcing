@@ -302,6 +302,10 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-bottom: 10px;
+}
+
+.timeline-filters {
   margin-bottom: 16px;
 }
 
@@ -428,6 +432,11 @@ button:disabled {
   margin-bottom: 14px;
 }
 
+.panel-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .seller-panel-header div,
 .seller-next {
   display: grid;
@@ -444,6 +453,112 @@ button:disabled {
 .seller-panel-header .ghost {
   width: auto;
   padding: 0 12px;
+}
+
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 16px 0 10px;
+}
+
+.section-title div {
+  display: grid;
+  gap: 3px;
+}
+
+.section-title span,
+.section-title small {
+  color: #a9aaa7;
+  font-size: 12px;
+}
+
+.section-title strong {
+  font-size: 16px;
+}
+
+.seller-dashboard {
+  margin-bottom: 14px;
+}
+
+.seller-group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.seller-group {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #292d31;
+  border-radius: 8px;
+  background: #171a1d;
+  padding: 11px;
+}
+
+.seller-group.favorite {
+  border-color: #e2b14f;
+  background: #1e1b13;
+}
+
+.seller-group-head,
+.seller-group-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.seller-name {
+  min-width: 0;
+  min-height: 28px;
+  padding: 0;
+  background: transparent;
+  color: #f4f1eb;
+  justify-content: flex-start;
+}
+
+.seller-name svg {
+  flex: 0 0 auto;
+}
+
+.seller-group-stats {
+  color: #a9aaa7;
+  font-size: 12px;
+}
+
+.seller-group-stats strong {
+  color: #f4f1eb;
+}
+
+.seller-group-next {
+  min-height: 32px;
+  padding: 0;
+  background: transparent;
+  color: #d8d5ce;
+  justify-content: flex-start;
+  font-size: 12px;
+}
+
+.seller-group-next span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.star-button {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  background: #24282c;
+  color: #a9aaa7;
+}
+
+.star-button.selected {
+  background: #e2b14f;
+  color: #15110a;
 }
 
 .seller-search {
