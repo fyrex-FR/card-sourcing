@@ -165,7 +165,7 @@ export function OpportunityCard({ item, ctx, variant = 'full', onAddToBasket, on
           <div className="opp-comps-keywords">
             {keywords.player && <span>{keywords.player}</span>}
             {keywords.year && <span>{keywords.year}</span>}
-            {keywords.brand && <span>{keywords.brand}</span>}
+            {keywords.context && <span className="opp-comps-context">{keywords.context}</span>}
             {keywords.isAuto && <span>auto</span>}
             {keywords.numberedDenom && <span>{keywords.numberedDenom}</span>}
             {keywords.isRookie && <span>RC</span>}
