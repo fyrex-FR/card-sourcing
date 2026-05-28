@@ -241,6 +241,11 @@ async def check_max_bid_exceeded(setting: dict[str, Any]) -> dict[str, int]:
     Pour chaque item bid_planned avec max_bid defini, refetch le prix actuel
     sur eBay. Si le prix depasse max_bid, envoie une alerte Discord et marque
     l'item pour eviter de re-spammer.
+
+    QUOTA EBAY : 1 appel par item bid_planned dans la fenetre 24h, a chaque
+    tick (5 min). Browse API = 5000 appels/jour par defaut. Au-dela de ~17
+    items en parallele, on risque de saturer. Voir get_item_current_price
+    dans ebay_service.py pour le detail et les leviers d'ajustement.
     """
     if not setting.get("notify_max_bid_exceeded", True):
         return {"sent": 0, "failed": 0}

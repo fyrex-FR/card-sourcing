@@ -245,6 +245,15 @@ async def search_seller_ending_auctions(
 EBAY_ITEM_URL = "https://api.ebay.com/buy/browse/v1/item/{item_id}"
 
 
+# ATTENTION QUOTA EBAY :
+# Browse API en production = 5000 appels/jour par defaut. Au-dela : 429.
+# Cette fonction est appelee par notify_scheduler.check_max_bid_exceeded
+# pour chaque item bid_planned avec max_bid defini, a chaque tick (5 min).
+# Si tu as N items dans la fenetre de 24h : N * 12 ticks/h * 24h = 288 N appels/jour.
+#   - 17 items max sans deborder
+#   - Si tu approches la limite : reduire MAX_BID_CHECK_WINDOW_MIN, ou
+#     espacer le tick (NOTIFY_CHECK_INTERVAL_SECONDS), ou demander un
+#     upgrade de quota a eBay.
 async def get_item_current_price(external_id: str, *, marketplace: str = "EBAY_US") -> dict[str, Any] | None:
     """
     Recupere le prix actuel + nb d'encheres d'un item via Browse API getItem.

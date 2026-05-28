@@ -252,6 +252,28 @@ Ensuite seulement, automatiser partiellement les comps.
 - Les endpoints eBay dépendent des limites et comportements de Browse API. Ne pas supposer que toutes les infos visibles sur eBay web sont disponibles.
 - Attention aux libellés : l'utilisateur final doit comprendre en 3 secondes pourquoi une carte est affichée.
 
+## Limites externes a surveiller
+
+### Quota eBay Browse API
+
+Le compte eBay developer en production a un quota par defaut de **5000 appels Browse API par jour**. Au-dela : reponses 429.
+
+Trois fonctionnalites consomment des appels :
+
+1. **Scan watchlist** (`search_active_listings`) : 1 a 2 appels par scan (avec eventuellement un fallback de query). Cout faible si on scanne ponctuellement.
+2. **Recherche elargie sur un vendeur** (`search_seller_ending_auctions`) : 1 appel par recherche manuelle. Marginal.
+3. **Alerte max_bid depasse** (`get_item_current_price`) : 1 appel par item `bid_planned` avec `max_bid` defini, dans la fenetre 24h, a chaque tick (5 min) tant qu'on n'a pas envoye la notif. Couteux.
+
+Calcul de saturation pour la feature max_bid : `N items * 12 ticks/h * 24h = 288 N appels/jour`. **Au-dela de ~17 items en parallele**, on sature le quota et le scan + autres features peuvent commencer a echouer.
+
+Leviers si on s'approche de la limite :
+
+- Reduire `MAX_BID_CHECK_WINDOW_MIN` dans `services/notify_scheduler.py` (par defaut 24h, on peut passer a 6h)
+- Augmenter `NOTIFY_CHECK_INTERVAL_SECONDS` (par defaut 300s, on peut passer a 600s)
+- Demander un upgrade de quota a eBay (formulaire developer portal)
+
+Le scheduler stocke `notified_max_bid_exceeded_at` apres une alerte, donc une carte n'est verifiee qu'une fois (jusqu'a la fin de l'enchere). C'est ca qui rend la facture supportable.
+
 ## Critère de succès
 
 Une bonne version de l'app doit permettre à Xavier d'ouvrir l'app et de répondre rapidement :
