@@ -1,4 +1,4 @@
-import { Clock, ExternalLink, Eye, Store, ShoppingBasket } from 'lucide-react';
+import { Clock, ExternalLink, Eye, Store, ShoppingBasket, TrendingUp } from 'lucide-react';
 import type { SourcingItem } from '../types';
 import {
   auctionUrgency,
@@ -8,6 +8,7 @@ import {
   totalPrice,
   type SignalContext,
 } from '../lib/itemSignals';
+import { buildSearchQueries, ebaySoldUrl, extractKeywords, point130Url } from '../lib/cardKeywords';
 
 function money(value: number | null, currency = 'USD') {
   if (value === null || Number.isNaN(value)) return '-';
@@ -46,6 +47,9 @@ export function OpportunityCard({ item, ctx, variant = 'full', onAddToBasket, on
   const price = totalPrice(item);
   const inBasket = item.status === 'in_basket' || item.status === 'bid_planned';
   const planned = item.status === 'bid_planned';
+  const keywords = extractKeywords(item.title);
+  const queries = buildSearchQueries(keywords);
+  const compsLabel = keywords.player ?? queries.broad;
 
   return (
     <article className={`opp-card ${variant}${inBasket ? ' in-basket' : ''}${planned ? ' planned' : ''}`}>
@@ -124,6 +128,46 @@ export function OpportunityCard({ item, ctx, variant = 'full', onAddToBasket, on
             eBay <ExternalLink size={13} />
           </a>
         </div>
+
+        <details className="opp-comps">
+          <summary>
+            <TrendingUp size={12} /> Voir comps - {compsLabel}
+          </summary>
+          <div className="opp-comps-tray">
+            <a
+              href={ebaySoldUrl(queries.precise)}
+              target="_blank"
+              rel="noreferrer"
+              title={queries.precise}
+            >
+              eBay vendus (precis) <ExternalLink size={11} />
+            </a>
+            <a
+              href={ebaySoldUrl(queries.broad)}
+              target="_blank"
+              rel="noreferrer"
+              title={queries.broad}
+            >
+              eBay vendus (large) <ExternalLink size={11} />
+            </a>
+            <a
+              href={point130Url(queries.precise)}
+              target="_blank"
+              rel="noreferrer"
+              title={queries.precise}
+            >
+              130point <ExternalLink size={11} />
+            </a>
+          </div>
+          <div className="opp-comps-keywords">
+            {keywords.player && <span>{keywords.player}</span>}
+            {keywords.year && <span>{keywords.year}</span>}
+            {keywords.brand && <span>{keywords.brand}</span>}
+            {keywords.isAuto && <span>auto</span>}
+            {keywords.numberedDenom && <span>{keywords.numberedDenom}</span>}
+            {keywords.isRookie && <span>RC</span>}
+          </div>
+        </details>
       </div>
     </article>
   );

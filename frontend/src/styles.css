@@ -1230,6 +1230,86 @@ a {
   text-decoration: none;
 }
 
+.opp-comps {
+  margin-top: 4px;
+}
+
+.opp-comps summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  list-style: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: #6f7277;
+  font-size: 11px;
+  user-select: none;
+  border: 1px dashed #393d42;
+  width: fit-content;
+}
+
+.opp-comps summary::-webkit-details-marker {
+  display: none;
+}
+
+.opp-comps summary svg {
+  color: #f4d182;
+}
+
+.opp-comps[open] summary {
+  border-style: solid;
+  background: #15181b;
+  color: #d8d6cf;
+}
+
+.opp-comps summary:hover {
+  color: #d8d6cf;
+  border-color: #5a5d62;
+}
+
+.opp-comps-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.opp-comps-tray a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid #393d42;
+  border-radius: 6px;
+  background: #0f1113;
+  color: #d8d6cf;
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.opp-comps-tray a:hover {
+  border-color: #f4d182;
+  color: #f4d182;
+}
+
+.opp-comps-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.opp-comps-keywords span {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #21252a;
+  color: #a9aaa7;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
 .opp-card.planned {
   border-color: #5a73c7;
   background: linear-gradient(180deg, #1a1f2c 0%, #171a1d 100%);
