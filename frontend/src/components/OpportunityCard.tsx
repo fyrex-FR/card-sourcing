@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Clock, ExternalLink, Eye, Store, ShoppingBasket, TrendingUp } from 'lucide-react';
 import type { SourcingItem } from '../types';
 import {
@@ -21,7 +22,7 @@ type Props = {
   variant?: 'compact' | 'full';
   onAddToBasket?: (item: SourcingItem) => void;
   onIgnore?: (item: SourcingItem) => void;
-  onPlanBid?: (item: SourcingItem) => void;
+  onPlanBid?: (item: SourcingItem, maxBid: number | null) => void;
   onOpenSeller?: (seller: string) => void;
 };
 
@@ -50,6 +51,26 @@ export function OpportunityCard({ item, ctx, variant = 'full', onAddToBasket, on
   const keywords = extractKeywords(item.title);
   const queries = buildSearchQueries(keywords);
   const compsLabel = keywords.player ?? queries.broad;
+
+  const [bidEditOpen, setBidEditOpen] = useState(false);
+  const [bidValue, setBidValue] = useState(
+    item.max_bid !== null && item.max_bid !== undefined ? String(item.max_bid) : '',
+  );
+
+  function handleBidSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!onPlanBid) return;
+    const trimmed = bidValue.trim();
+    const parsed = trimmed === '' ? null : Number(trimmed);
+    if (parsed !== null && (Number.isNaN(parsed) || parsed < 0)) return;
+    onPlanBid(item, parsed);
+    setBidEditOpen(false);
+  }
+
+  function openBidEditor() {
+    setBidValue(item.max_bid !== null && item.max_bid !== undefined ? String(item.max_bid) : '');
+    setBidEditOpen(true);
+  }
 
   return (
     <article className={`opp-card ${variant}${inBasket ? ' in-basket' : ''}${planned ? ' planned' : ''}`}>
@@ -115,7 +136,7 @@ export function OpportunityCard({ item, ctx, variant = 'full', onAddToBasket, on
             </button>
           )}
           {onPlanBid && (
-            <button type="button" className="opp-bid" onClick={() => onPlanBid(item)}>
+            <button type="button" className="opp-bid" onClick={openBidEditor}>
               {planned ? 'Modifier max' : 'Encherir'}
             </button>
           )}
@@ -128,6 +149,31 @@ export function OpportunityCard({ item, ctx, variant = 'full', onAddToBasket, on
             eBay <ExternalLink size={13} />
           </a>
         </div>
+
+        {bidEditOpen && (
+          <form className="opp-bid-form" onSubmit={handleBidSubmit}>
+            <label htmlFor={`bid-${item.id}`}>
+              Max d'enchere ({item.currency})
+            </label>
+            <div className="opp-bid-form-row">
+              <input
+                id={`bid-${item.id}`}
+                type="number"
+                step="0.01"
+                min="0"
+                autoFocus
+                value={bidValue}
+                onChange={(event) => setBidValue(event.target.value)}
+                placeholder="ex. 80"
+              />
+              <button type="submit">Confirmer</button>
+              <button type="button" className="ghost" onClick={() => setBidEditOpen(false)}>
+                Annuler
+              </button>
+            </div>
+            <small>Vide = pas de max defini, juste planifier l'enchere.</small>
+          </form>
+        )}
 
         <details className="opp-comps">
           <summary>

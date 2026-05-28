@@ -655,16 +655,7 @@ function App() {
     }
   }
 
-  async function planBid(item: SourcingItem) {
-    const current = item.max_bid !== null && item.max_bid !== undefined ? String(item.max_bid) : '';
-    const input = window.prompt(`Montant max d'enchere pour "${item.title.slice(0, 60)}" (${item.currency})`, current);
-    if (input === null) return;
-    const trimmed = input.trim();
-    const max_bid = trimmed === '' ? null : Number(trimmed);
-    if (max_bid !== null && (Number.isNaN(max_bid) || max_bid < 0)) {
-      setError('Montant invalide');
-      return;
-    }
+  async function planBid(item: SourcingItem, max_bid: number | null) {
     try {
       const updated = await apiFetch<SourcingItem>(`/items/${item.id}`, {
         method: 'PATCH',

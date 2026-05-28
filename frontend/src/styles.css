@@ -1330,6 +1330,61 @@ a {
   background: #6a83d7 !important;
 }
 
+.opp-bid-form {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgb(90 115 199 / 0.4);
+  border-radius: 8px;
+  background: rgb(90 115 199 / 0.08);
+}
+
+.opp-bid-form label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #a8b8e0;
+}
+
+.opp-bid-form-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.opp-bid-form-row input {
+  flex: 1;
+  min-width: 100px;
+  background: #0f1113;
+  border: 1px solid #2d3138;
+  color: #f4f1eb;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.opp-bid-form-row button {
+  min-height: auto;
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.opp-bid-form-row button[type="submit"] {
+  background: #5a73c7;
+  color: #f4f1eb;
+}
+
+.opp-bid-form-row button[type="submit"]:hover {
+  background: #6a83d7;
+}
+
+.opp-bid-form small {
+  color: #6f7277;
+  font-size: 11px;
+}
+
 .max-bid {
   padding: 2px 6px;
   border-radius: 4px;
