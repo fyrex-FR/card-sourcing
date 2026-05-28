@@ -35,6 +35,9 @@ export type SourcingItem = {
   status: 'new' | 'watching' | 'in_basket' | 'bid_planned' | 'ignored' | 'bought' | 'too_expensive';
   max_bid: number | null;
   note: string | null;
+  notify_enabled: boolean | null;
+  notify_minutes_before: number | null;
+  notify_minutes_before_secondary: number | null;
   first_seen_at: string;
 };
 
@@ -44,6 +47,17 @@ export type SellerFavorite = {
   note: string | null;
   shipping_estimate: number | null;
   created_at: string;
+};
+
+export type UserSettings = {
+  discord_webhook_url: string | null;
+  notify_minutes_before: number | null;
+  notify_minutes_before_secondary: number | null;
+  notify_bid_planned: boolean | null;
+  notify_in_basket: boolean | null;
+  notify_watching: boolean | null;
+  discord_mention_here: boolean | null;
+  discord_mention_at_minutes: number | null;
 };
 
 export type ScanResult = {

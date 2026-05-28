@@ -6,7 +6,7 @@ import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
 import { OpportunityCard } from './components/OpportunityCard';
 import type { SignalContext } from './lib/itemSignals';
-import type { ScanResult, SellerAuctionResult, SellerFavorite, SourcingItem, Watchlist } from './types';
+import type { ScanResult, SellerAuctionResult, SellerFavorite, SourcingItem, UserSettings, Watchlist } from './types';
 import './styles.css';
 
 type FormState = {
@@ -178,9 +178,16 @@ function App() {
   const [showEnded, setShowEnded] = useState(false);
   const [favoriteSellers, setFavoriteSellers] = useState<SellerFavorite[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [discordWebhook, setDiscordWebhook] = useState<string>('');
-  const [discordWebhookSaved, setDiscordWebhookSaved] = useState<string>('');
-  const [notifyMinutes, setNotifyMinutes] = useState<number>(30);
+  const [settings, setSettings] = useState<UserSettings>({
+    discord_webhook_url: null,
+    notify_minutes_before: 30,
+    notify_minutes_before_secondary: null,
+    notify_bid_planned: true,
+    notify_in_basket: false,
+    notify_watching: false,
+    discord_mention_here: false,
+    discord_mention_at_minutes: 10,
+  });
   const [settingsBusy, setSettingsBusy] = useState<'' | 'save' | 'test'>('');
   const [settingsMessage, setSettingsMessage] = useState<string>('');
 
@@ -437,22 +444,39 @@ function App() {
 
   async function load() {
     setError('');
-    const [nextWatchlists, favorites, nextItems, settings] = await Promise.all([
+    const [nextWatchlists, favorites, nextItems, nextSettings] = await Promise.all([
       apiFetch<Watchlist[]>('/watchlists'),
       apiFetch<SellerFavorite[]>('/seller-favorites').catch(() => [] as SellerFavorite[]),
       apiFetch<SourcingItem[]>('/items'),
-      apiFetch<{ discord_webhook_url: string | null; notify_minutes_before: number | null }>(
-        '/settings',
-      ).catch(() => ({ discord_webhook_url: null, notify_minutes_before: 30 })),
+      apiFetch<UserSettings>('/settings').catch(
+        () =>
+          ({
+            discord_webhook_url: null,
+            notify_minutes_before: 30,
+            notify_minutes_before_secondary: null,
+            notify_bid_planned: true,
+            notify_in_basket: false,
+            notify_watching: false,
+            discord_mention_here: false,
+            discord_mention_at_minutes: 10,
+          }) as UserSettings,
+      ),
     ]);
     setWatchlists(nextWatchlists);
     setFavoriteSellers(favorites);
     const active = selectedId ?? nextWatchlists[0]?.id;
     setSelectedId(active ?? null);
     setAllItems(nextItems);
-    setDiscordWebhook(settings.discord_webhook_url ?? '');
-    setDiscordWebhookSaved(settings.discord_webhook_url ?? '');
-    setNotifyMinutes(settings.notify_minutes_before ?? 30);
+    setSettings({
+      discord_webhook_url: nextSettings.discord_webhook_url ?? null,
+      notify_minutes_before: nextSettings.notify_minutes_before ?? 30,
+      notify_minutes_before_secondary: nextSettings.notify_minutes_before_secondary ?? null,
+      notify_bid_planned: nextSettings.notify_bid_planned ?? true,
+      notify_in_basket: nextSettings.notify_in_basket ?? false,
+      notify_watching: nextSettings.notify_watching ?? false,
+      discord_mention_here: nextSettings.discord_mention_here ?? false,
+      discord_mention_at_minutes: nextSettings.discord_mention_at_minutes ?? 10,
+    });
   }
 
   useEffect(() => {
@@ -679,24 +703,39 @@ function App() {
     }
   }
 
+  function patchSettings(patch: Partial<UserSettings>) {
+    setSettings((current) => ({ ...current, ...patch }));
+  }
+
   async function saveSettings() {
     setSettingsBusy('save');
     setSettingsMessage('');
     try {
-      const cleaned = discordWebhook.trim();
-      const updated = await apiFetch<{ discord_webhook_url: string | null; notify_minutes_before: number | null }>(
-        '/settings',
-        {
-          method: 'PATCH',
-          body: JSON.stringify({
-            discord_webhook_url: cleaned === '' ? null : cleaned,
-            notify_minutes_before: notifyMinutes,
-          }),
-        },
-      );
-      setDiscordWebhookSaved(updated.discord_webhook_url ?? '');
-      setDiscordWebhook(updated.discord_webhook_url ?? '');
-      setNotifyMinutes(updated.notify_minutes_before ?? 30);
+      const cleanedUrl = (settings.discord_webhook_url ?? '').trim();
+      const payload: Partial<UserSettings> = {
+        discord_webhook_url: cleanedUrl === '' ? null : cleanedUrl,
+        notify_minutes_before: settings.notify_minutes_before ?? 30,
+        notify_minutes_before_secondary: settings.notify_minutes_before_secondary,
+        notify_bid_planned: settings.notify_bid_planned ?? true,
+        notify_in_basket: settings.notify_in_basket ?? false,
+        notify_watching: settings.notify_watching ?? false,
+        discord_mention_here: settings.discord_mention_here ?? false,
+        discord_mention_at_minutes: settings.discord_mention_at_minutes ?? 10,
+      };
+      const updated = await apiFetch<UserSettings>('/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+      setSettings({
+        discord_webhook_url: updated.discord_webhook_url ?? null,
+        notify_minutes_before: updated.notify_minutes_before ?? 30,
+        notify_minutes_before_secondary: updated.notify_minutes_before_secondary ?? null,
+        notify_bid_planned: updated.notify_bid_planned ?? true,
+        notify_in_basket: updated.notify_in_basket ?? false,
+        notify_watching: updated.notify_watching ?? false,
+        discord_mention_here: updated.discord_mention_here ?? false,
+        discord_mention_at_minutes: updated.discord_mention_at_minutes ?? 10,
+      });
       setSettingsMessage('Reglages enregistres.');
     } catch (err) {
       setSettingsMessage(err instanceof Error ? err.message : 'Erreur enregistrement');
@@ -706,7 +745,7 @@ function App() {
   }
 
   async function testDiscord() {
-    const cleaned = discordWebhook.trim();
+    const cleaned = (settings.discord_webhook_url ?? '').trim();
     if (!cleaned) {
       setSettingsMessage("Colle d'abord ton webhook Discord.");
       return;
@@ -723,6 +762,22 @@ function App() {
       setSettingsMessage(err instanceof Error ? err.message : 'Echec du test');
     } finally {
       setSettingsBusy('');
+    }
+  }
+
+  async function updateItemNotify(item: SourcingItem, patch: {
+    notify_enabled?: boolean | null;
+    notify_minutes_before?: number | null;
+    notify_minutes_before_secondary?: number | null;
+  }) {
+    try {
+      const updated = await apiFetch<SourcingItem>(`/items/${item.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      });
+      setAllItems((list) => list.map((entry) => (entry.id === item.id ? updated : entry)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur reglage notif');
     }
   }
 
@@ -860,7 +915,7 @@ function App() {
           className={settingsOpen ? 'sidebar-add open' : 'sidebar-add'}
           onClick={() => setSettingsOpen((value) => !value)}
         >
-          {discordWebhookSaved ? 'Notifications Discord ON' : 'Notifications Discord'}
+          {settings.discord_webhook_url ? 'Notifications Discord ON' : 'Notifications Discord'}
         </button>
 
         {settingsOpen && (
@@ -870,20 +925,73 @@ function App() {
               id="discord-url"
               type="url"
               placeholder="https://discord.com/api/webhooks/..."
-              value={discordWebhook}
-              onChange={(event) => setDiscordWebhook(event.target.value)}
+              value={settings.discord_webhook_url ?? ''}
+              onChange={(event) => patchSettings({ discord_webhook_url: event.target.value })}
               autoComplete="off"
             />
-            <label htmlFor="notify-mins">Alerter X minutes avant fin</label>
+
+            <div className="settings-section-title">Statuts a notifier</div>
+            <label className="settings-checkbox">
+              <input
+                type="checkbox"
+                checked={settings.notify_bid_planned ?? true}
+                onChange={(event) => patchSettings({ notify_bid_planned: event.target.checked })}
+              />
+              <span>A encherir <small>(bid_planned)</small></span>
+            </label>
+            <label className="settings-checkbox">
+              <input
+                type="checkbox"
+                checked={settings.notify_in_basket ?? false}
+                onChange={(event) => patchSettings({ notify_in_basket: event.target.checked })}
+              />
+              <span>Au panier <small>(in_basket)</small></span>
+            </label>
+            <label className="settings-checkbox">
+              <input
+                type="checkbox"
+                checked={settings.notify_watching ?? false}
+                onChange={(event) => patchSettings({ notify_watching: event.target.checked })}
+              />
+              <span>A suivre <small>(watching)</small></span>
+            </label>
+
+            <div className="settings-section-title">Timing</div>
+            <label htmlFor="notify-mins">1ere alerte - X min avant fin</label>
             <input
               id="notify-mins"
               type="number"
               min="5"
               max="240"
               step="5"
-              value={notifyMinutes}
-              onChange={(event) => setNotifyMinutes(Number(event.target.value) || 30)}
+              value={settings.notify_minutes_before ?? 30}
+              onChange={(event) =>
+                patchSettings({ notify_minutes_before: Number(event.target.value) || 30 })
+              }
             />
+            <label htmlFor="notify-mins-2">2eme alerte (urgente) - X min avant <small>(vide = aucune)</small></label>
+            <input
+              id="notify-mins-2"
+              type="number"
+              min="1"
+              max="60"
+              step="1"
+              placeholder="ex. 5"
+              value={settings.notify_minutes_before_secondary ?? ''}
+              onChange={(event) => {
+                const v = event.target.value.trim();
+                patchSettings({ notify_minutes_before_secondary: v === '' ? null : Number(v) });
+              }}
+            />
+            <label className="settings-checkbox">
+              <input
+                type="checkbox"
+                checked={settings.discord_mention_here ?? false}
+                onChange={(event) => patchSettings({ discord_mention_here: event.target.checked })}
+              />
+              <span>Mentionner @here pour les fins critiques (&le; 10 min)</span>
+            </label>
+
             <div className="settings-actions">
               <button type="button" onClick={saveSettings} disabled={settingsBusy !== ''}>
                 {settingsBusy === 'save' ? '...' : 'Enregistrer'}
@@ -892,7 +1000,7 @@ function App() {
                 type="button"
                 className="ghost"
                 onClick={testDiscord}
-                disabled={settingsBusy !== '' || !discordWebhook.trim()}
+                disabled={settingsBusy !== '' || !(settings.discord_webhook_url ?? '').trim()}
               >
                 {settingsBusy === 'test' ? '...' : 'Tester'}
               </button>
@@ -900,7 +1008,7 @@ function App() {
             {settingsMessage && <small className="settings-message">{settingsMessage}</small>}
             <small className="settings-hint">
               Discord {'>'} ton serveur {'>'} channel {'>'} Modifier {'>'} Integrations {'>'} Webhooks.
-              On t'enverra un embed quand une enchere "a encherir", "au panier" ou "a suivre" termine bientot.
+              Tu peux surcharger les reglages par carte via l'icone de cloche.
             </small>
           </div>
         )}
@@ -973,7 +1081,7 @@ function App() {
                   onAddToBasket={(target) => toggleBasket(target)}
                   onIgnore={(target) => updateStatus(target.id, 'ignored')}
                   onPlanBid={planBid}
-                  onOpenSeller={(seller) => openSellerPanel(seller)}
+                  onOpenSeller={(seller) => openSellerPanel(seller)} onUpdateNotify={updateItemNotify}
                 />
               ))}
               {visibleItems.length === 0 && <div className="empty-state compact">Lance un scan pour remplir la file d'action.</div>}
@@ -1185,7 +1293,7 @@ function App() {
               onAddToBasket={(target) => toggleBasket(target)}
               onPlanBid={planBid}
               onIgnore={(target) => updateStatus(target.id, 'ignored')}
-              onOpenSeller={(seller) => openSellerPanel(seller)}
+              onOpenSeller={(seller) => openSellerPanel(seller)} onUpdateNotify={updateItemNotify}
             />
           ))}
         </div>
@@ -1372,6 +1480,7 @@ function App() {
                         onAddToBasket={(target) => toggleBasket(target)}
                         onPlanBid={planBid}
                         onIgnore={(target) => updateStatus(target.id, 'ignored')}
+                        onUpdateNotify={updateItemNotify}
                       />
                     ))}
                   </div>
@@ -1395,6 +1504,7 @@ function App() {
                         onAddToBasket={(target) => toggleBasket(target)}
                         onPlanBid={planBid}
                         onIgnore={(target) => updateStatus(target.id, 'ignored')}
+                        onUpdateNotify={updateItemNotify}
                       />
                     ))}
                   </div>

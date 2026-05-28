@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Clock, ExternalLink, Eye, Store, ShoppingBasket, TrendingUp } from 'lucide-react';
+import { Bell, Clock, ExternalLink, Eye, Store, ShoppingBasket, TrendingUp } from 'lucide-react';
 import type { SourcingItem } from '../types';
 import {
   auctionUrgency,
@@ -24,6 +24,14 @@ type Props = {
   onIgnore?: (item: SourcingItem) => void;
   onPlanBid?: (item: SourcingItem, maxBid: number | null) => void;
   onOpenSeller?: (seller: string) => void;
+  onUpdateNotify?: (
+    item: SourcingItem,
+    patch: {
+      notify_enabled?: boolean | null;
+      notify_minutes_before?: number | null;
+      notify_minutes_before_secondary?: number | null;
+    },
+  ) => void;
 };
 
 /**
@@ -40,7 +48,16 @@ type Props = {
  * "Encherir" met le statut à bid_planned + max_bid. Pour les enchères que tu vas
  * disputer activement.
  */
-export function OpportunityCard({ item, ctx, variant = 'full', onAddToBasket, onIgnore, onPlanBid, onOpenSeller }: Props) {
+export function OpportunityCard({
+  item,
+  ctx,
+  variant = 'full',
+  onAddToBasket,
+  onIgnore,
+  onPlanBid,
+  onOpenSeller,
+  onUpdateNotify,
+}: Props) {
   const reasons = priorityReasons(item, ctx);
   const risks = riskFlags(item, ctx);
   const urgency = auctionUrgency(item.auction_end_at, ctx.now);
@@ -57,6 +74,31 @@ export function OpportunityCard({ item, ctx, variant = 'full', onAddToBasket, on
     item.max_bid !== null && item.max_bid !== undefined ? String(item.max_bid) : '',
   );
 
+  const [notifyEditOpen, setNotifyEditOpen] = useState(false);
+  const [notifyEnabledLocal, setNotifyEnabledLocal] = useState<'default' | 'on' | 'off'>(
+    item.notify_enabled === null || item.notify_enabled === undefined
+      ? 'default'
+      : item.notify_enabled
+        ? 'on'
+        : 'off',
+  );
+  const [notifyPrimaryLocal, setNotifyPrimaryLocal] = useState<string>(
+    item.notify_minutes_before !== null && item.notify_minutes_before !== undefined
+      ? String(item.notify_minutes_before)
+      : '',
+  );
+  const [notifySecondaryLocal, setNotifySecondaryLocal] = useState<string>(
+    item.notify_minutes_before_secondary !== null && item.notify_minutes_before_secondary !== undefined
+      ? String(item.notify_minutes_before_secondary)
+      : '',
+  );
+
+  const hasNotifyOverride =
+    item.notify_enabled !== null
+    || (item.notify_minutes_before !== null && item.notify_minutes_before !== undefined)
+    || (item.notify_minutes_before_secondary !== null && item.notify_minutes_before_secondary !== undefined);
+  const notifyExplicitlyOff = item.notify_enabled === false;
+
   function handleBidSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!onPlanBid) return;
@@ -70,6 +112,25 @@ export function OpportunityCard({ item, ctx, variant = 'full', onAddToBasket, on
   function openBidEditor() {
     setBidValue(item.max_bid !== null && item.max_bid !== undefined ? String(item.max_bid) : '');
     setBidEditOpen(true);
+  }
+
+  function handleNotifySubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!onUpdateNotify) return;
+    const enabled =
+      notifyEnabledLocal === 'on' ? true : notifyEnabledLocal === 'off' ? false : null;
+    const primaryRaw = notifyPrimaryLocal.trim();
+    const primaryParsed = primaryRaw === '' ? null : Number(primaryRaw);
+    const secondaryRaw = notifySecondaryLocal.trim();
+    const secondaryParsed = secondaryRaw === '' ? null : Number(secondaryRaw);
+    if (primaryParsed !== null && (Number.isNaN(primaryParsed) || primaryParsed < 1)) return;
+    if (secondaryParsed !== null && (Number.isNaN(secondaryParsed) || secondaryParsed < 1)) return;
+    onUpdateNotify(item, {
+      notify_enabled: enabled,
+      notify_minutes_before: primaryParsed,
+      notify_minutes_before_secondary: secondaryParsed,
+    });
+    setNotifyEditOpen(false);
   }
 
   return (
@@ -145,6 +206,28 @@ export function OpportunityCard({ item, ctx, variant = 'full', onAddToBasket, on
               Ignorer
             </button>
           )}
+          {onUpdateNotify && item.auction_end_at && (
+            <button
+              type="button"
+              className={
+                notifyExplicitlyOff
+                  ? 'opp-bell off'
+                  : hasNotifyOverride
+                    ? 'opp-bell custom'
+                    : 'opp-bell'
+              }
+              onClick={() => setNotifyEditOpen((value) => !value)}
+              title={
+                notifyExplicitlyOff
+                  ? 'Notif desactivee pour cette carte'
+                  : hasNotifyOverride
+                    ? 'Reglage notif personnalise'
+                    : 'Reglage notif (selon defaut compte)'
+              }
+            >
+              <Bell size={13} />
+            </button>
+          )}
           <a href={item.url} target="_blank" rel="noreferrer" className="opp-ebay">
             eBay <ExternalLink size={13} />
           </a>
@@ -172,6 +255,49 @@ export function OpportunityCard({ item, ctx, variant = 'full', onAddToBasket, on
               </button>
             </div>
             <small>Vide = pas de max defini, juste planifier l'enchere.</small>
+          </form>
+        )}
+
+        {notifyEditOpen && (
+          <form className="opp-notify-form" onSubmit={handleNotifySubmit}>
+            <label htmlFor={`notify-state-${item.id}`}>Notif Discord pour cette carte</label>
+            <select
+              id={`notify-state-${item.id}`}
+              value={notifyEnabledLocal}
+              onChange={(event) => setNotifyEnabledLocal(event.target.value as 'default' | 'on' | 'off')}
+            >
+              <option value="default">Suivre le defaut compte</option>
+              <option value="on">Forcer ON</option>
+              <option value="off">Forcer OFF (jamais notifier)</option>
+            </select>
+            <label htmlFor={`notify-prim-${item.id}`}>1ere alerte (min) <small>vide = compte</small></label>
+            <input
+              id={`notify-prim-${item.id}`}
+              type="number"
+              min="1"
+              max="240"
+              step="5"
+              placeholder="ex. 60"
+              value={notifyPrimaryLocal}
+              onChange={(event) => setNotifyPrimaryLocal(event.target.value)}
+            />
+            <label htmlFor={`notify-sec-${item.id}`}>2eme alerte (min) <small>vide = compte</small></label>
+            <input
+              id={`notify-sec-${item.id}`}
+              type="number"
+              min="1"
+              max="60"
+              step="1"
+              placeholder="ex. 5"
+              value={notifySecondaryLocal}
+              onChange={(event) => setNotifySecondaryLocal(event.target.value)}
+            />
+            <div className="opp-notify-actions">
+              <button type="submit">Enregistrer</button>
+              <button type="button" className="ghost" onClick={() => setNotifyEditOpen(false)}>
+                Annuler
+              </button>
+            </div>
           </form>
         )}
 

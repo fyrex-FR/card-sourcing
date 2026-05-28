@@ -44,6 +44,9 @@ class ItemUpdate(BaseModel):
     status: _ITEM_STATUSES | None = None
     max_bid: float | None = Field(default=None, ge=0)
     note: str | None = Field(default=None, max_length=2000)
+    notify_enabled: bool | None = None
+    notify_minutes_before: int | None = Field(default=None, ge=1, le=240)
+    notify_minutes_before_secondary: int | None = Field(default=None, ge=1, le=240)
 
 
 class SellerFavoriteCreate(BaseModel):
@@ -60,13 +63,23 @@ class SellerFavoriteUpdate(BaseModel):
 class UserSettingsUpdate(BaseModel):
     discord_webhook_url: str | None = Field(default=None, max_length=500)
     notify_minutes_before: int | None = Field(default=None, ge=1, le=240)
+    notify_minutes_before_secondary: int | None = Field(default=None, ge=1, le=240)
+    notify_bid_planned: bool | None = None
+    notify_in_basket: bool | None = None
+    notify_watching: bool | None = None
+    discord_mention_here: bool | None = None
+    discord_mention_at_minutes: int | None = Field(default=None, ge=1, le=240)
 
 
 class TestNotificationRequest(BaseModel):
     discord_webhook_url: str = Field(min_length=10, max_length=500)
 
 
-OPTIONAL_ITEM_COLUMNS = {"auction_end_at", "bid_count", "match_query", "match_quality", "max_bid", "note"}
+OPTIONAL_ITEM_COLUMNS = {
+    "auction_end_at", "bid_count", "match_query", "match_quality",
+    "max_bid", "note",
+    "notify_enabled", "notify_minutes_before", "notify_minutes_before_secondary",
+}
 OPTIONAL_FAVORITE_COLUMNS = {"shipping_estimate"}
 
 
