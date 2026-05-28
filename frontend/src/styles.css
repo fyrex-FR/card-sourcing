@@ -1887,6 +1887,32 @@ a {
   border-color: #f4f1eb;
 }
 
+.hidden-ended-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 3px 9px;
+  background: rgb(244 209 130 / 0.12);
+  color: #f4d182;
+  border: 1px solid rgb(244 209 130 / 0.4);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  min-height: auto;
+  cursor: pointer;
+}
+
+.hidden-ended-toggle:hover {
+  background: rgb(244 209 130 / 0.2);
+}
+
+.hidden-ended-toggle.active {
+  background: #21252a;
+  color: #a9aaa7;
+  border-color: #393d42;
+}
+
 /* ===== Seller view (plein ecran, dans .content) ===== */
 .seller-view {
   display: grid;

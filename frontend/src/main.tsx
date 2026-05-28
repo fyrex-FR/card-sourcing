@@ -175,6 +175,7 @@ function App() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [showEnded, setShowEnded] = useState(false);
   const [favoriteSellers, setFavoriteSellers] = useState<SellerFavorite[]>([]);
 
   const favoriteSellerUsernames = useMemo(
@@ -219,8 +220,18 @@ function App() {
   const visibleItems = useMemo(() => {
     const filtered = items.filter((item) => {
       if (statusFilter !== 'all' && item.status !== statusFilter) return false;
-      if (timeFilter === 'all') return true;
       const bucket = auctionBucket(item.auction_end_at, now);
+      // Par defaut on masque les encheres terminees qu'on n'a pas engagees
+      // (ni au panier, ni a encherir, ni achete, ni a suivre). Inutile de
+      // les voir, elles sont mortes. L'utilisateur peut les re-afficher via
+      // le toggle "Voir terminees" ou le filtre "terminees".
+      const isEnded = bucket === 'ended';
+      const isEngaged = item.status === 'in_basket'
+        || item.status === 'bid_planned'
+        || item.status === 'bought'
+        || item.status === 'watching';
+      if (isEnded && !isEngaged && !showEnded && timeFilter !== 'ended') return false;
+      if (timeFilter === 'all') return true;
       return timeFilter === 'week' ? bucket === 'today' || bucket === 'tomorrow' || bucket === 'week' : bucket === timeFilter;
     });
     return [...filtered].sort((left, right) => {
@@ -229,7 +240,16 @@ function App() {
       if (leftEnd !== rightEnd) return leftEnd - rightEnd;
       return totalPrice(left) - totalPrice(right);
     });
-  }, [items, now, statusFilter, timeFilter]);
+  }, [items, now, statusFilter, timeFilter, showEnded]);
+
+  const hiddenEndedCount = useMemo(() => {
+    if (showEnded || timeFilter === 'ended') return 0;
+    return items.filter((item) => {
+      const bucket = auctionBucket(item.auction_end_at, now);
+      if (bucket !== 'ended') return false;
+      return item.status === 'new' || item.status === 'ignored' || item.status === 'too_expensive';
+    }).length;
+  }, [items, now, showEnded, timeFilter]);
 
   const stats = useMemo(() => {
     const active = items.filter(isActiveItem);
@@ -995,6 +1015,26 @@ function App() {
                   {visibleItems.length} / {items.length}
                   {statusFilter !== 'all' || timeFilter !== 'all' ? ' (filtres)' : ''}
                 </span>
+                {hiddenEndedCount > 0 && (
+                  <button
+                    type="button"
+                    className="hidden-ended-toggle"
+                    onClick={() => setShowEnded(true)}
+                    title="Reafficher les encheres terminees non engagees"
+                  >
+                    + {hiddenEndedCount} terminee{hiddenEndedCount > 1 ? 's' : ''} masquee{hiddenEndedCount > 1 ? 's' : ''}
+                  </button>
+                )}
+                {showEnded && (
+                  <button
+                    type="button"
+                    className="hidden-ended-toggle active"
+                    onClick={() => setShowEnded(false)}
+                    title="Masquer a nouveau les encheres terminees"
+                  >
+                    Masquer terminees
+                  </button>
+                )}
               </div>
               <button
                 type="button"
@@ -1063,9 +1103,14 @@ function App() {
           const basketItems = sellerLocalItems.filter(
             (item) => item.status === 'in_basket' || item.status === 'bid_planned',
           );
-          const otherItems = sellerLocalItems.filter(
-            (item) => item.status !== 'in_basket' && item.status !== 'bid_planned',
-          );
+          const otherItems = sellerLocalItems.filter((item) => {
+            if (item.status === 'in_basket' || item.status === 'bid_planned') return false;
+            // Masque les terminees non engagees, comme la vue principale
+            const isEnded = auctionBucket(item.auction_end_at, now) === 'ended';
+            const isEngaged = item.status === 'bought' || item.status === 'watching';
+            if (isEnded && !isEngaged && !showEnded) return false;
+            return true;
+          });
           const fav = favoriteByUsername.get(sellerPanel.seller);
           const shippingValue =
             fav?.shipping_estimate !== null && fav?.shipping_estimate !== undefined
