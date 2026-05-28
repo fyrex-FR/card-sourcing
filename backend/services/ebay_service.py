@@ -240,3 +240,41 @@ async def search_seller_ending_auctions(
         "days": days,
         "results": results,
     }
+
+
+EBAY_ITEM_URL = "https://api.ebay.com/buy/browse/v1/item/{item_id}"
+
+
+async def get_item_current_price(external_id: str, *, marketplace: str = "EBAY_US") -> dict[str, Any] | None:
+    """
+    Recupere le prix actuel + nb d'encheres d'un item via Browse API getItem.
+    Renvoie {"price": float, "currency": str, "bid_count": int|None, "auction_end_at": str|None}
+    ou None si erreur.
+    """
+    if not external_id:
+        return None
+    token = await _get_access_token()
+    if not token:
+        return None
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-EBAY-C-MARKETPLACE-ID": marketplace,
+    }
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            resp = await client.get(EBAY_ITEM_URL.format(item_id=external_id), headers=headers)
+        except httpx.HTTPError:
+            return None
+    if resp.status_code != 200:
+        return None
+    data = resp.json()
+    price_obj = data.get("price") or data.get("currentBidPrice") or {}
+    price = _to_float(price_obj.get("value"))
+    if price is None:
+        return None
+    return {
+        "price": price,
+        "currency": price_obj.get("currency", "USD"),
+        "bid_count": data.get("bidCount"),
+        "auction_end_at": data.get("itemEndDate"),
+    }

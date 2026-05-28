@@ -187,6 +187,9 @@ function App() {
     notify_watching: false,
     discord_mention_here: false,
     discord_mention_at_minutes: 10,
+    daily_summary_enabled: false,
+    daily_summary_hour: 9,
+    notify_max_bid_exceeded: true,
   });
   const [settingsBusy, setSettingsBusy] = useState<'' | 'save' | 'test'>('');
   const [settingsMessage, setSettingsMessage] = useState<string>('');
@@ -459,6 +462,9 @@ function App() {
             notify_watching: false,
             discord_mention_here: false,
             discord_mention_at_minutes: 10,
+            daily_summary_enabled: false,
+            daily_summary_hour: 9,
+            notify_max_bid_exceeded: true,
           }) as UserSettings,
       ),
     ]);
@@ -476,6 +482,9 @@ function App() {
       notify_watching: nextSettings.notify_watching ?? false,
       discord_mention_here: nextSettings.discord_mention_here ?? false,
       discord_mention_at_minutes: nextSettings.discord_mention_at_minutes ?? 10,
+      daily_summary_enabled: nextSettings.daily_summary_enabled ?? false,
+      daily_summary_hour: nextSettings.daily_summary_hour ?? 9,
+      notify_max_bid_exceeded: nextSettings.notify_max_bid_exceeded ?? true,
     });
   }
 
@@ -721,6 +730,9 @@ function App() {
         notify_watching: settings.notify_watching ?? false,
         discord_mention_here: settings.discord_mention_here ?? false,
         discord_mention_at_minutes: settings.discord_mention_at_minutes ?? 10,
+        daily_summary_enabled: settings.daily_summary_enabled ?? false,
+        daily_summary_hour: settings.daily_summary_hour ?? 9,
+        notify_max_bid_exceeded: settings.notify_max_bid_exceeded ?? true,
       };
       const updated = await apiFetch<UserSettings>('/settings', {
         method: 'PATCH',
@@ -735,6 +747,9 @@ function App() {
         notify_watching: updated.notify_watching ?? false,
         discord_mention_here: updated.discord_mention_here ?? false,
         discord_mention_at_minutes: updated.discord_mention_at_minutes ?? 10,
+        daily_summary_enabled: updated.daily_summary_enabled ?? false,
+        daily_summary_hour: updated.daily_summary_hour ?? 9,
+        notify_max_bid_exceeded: updated.notify_max_bid_exceeded ?? true,
       });
       setSettingsMessage('Reglages enregistres.');
     } catch (err) {
@@ -991,6 +1006,37 @@ function App() {
               />
               <span>Mentionner @here pour les fins critiques (&le; 10 min)</span>
             </label>
+
+            <div className="settings-section-title">Autres alertes</div>
+            <label className="settings-checkbox">
+              <input
+                type="checkbox"
+                checked={settings.notify_max_bid_exceeded ?? true}
+                onChange={(event) => patchSettings({ notify_max_bid_exceeded: event.target.checked })}
+              />
+              <span>Alerte si le prix depasse mon max d'enchere</span>
+            </label>
+            <label className="settings-checkbox">
+              <input
+                type="checkbox"
+                checked={settings.daily_summary_enabled ?? false}
+                onChange={(event) => patchSettings({ daily_summary_enabled: event.target.checked })}
+              />
+              <span>Resume quotidien Discord</span>
+            </label>
+            <label htmlFor="daily-hour">Heure (Europe/Paris)</label>
+            <input
+              id="daily-hour"
+              type="number"
+              min="0"
+              max="23"
+              step="1"
+              value={settings.daily_summary_hour ?? 9}
+              onChange={(event) =>
+                patchSettings({ daily_summary_hour: Math.min(23, Math.max(0, Number(event.target.value) || 9)) })
+              }
+              disabled={!(settings.daily_summary_enabled ?? false)}
+            />
 
             <div className="settings-actions">
               <button type="button" onClick={saveSettings} disabled={settingsBusy !== ''}>

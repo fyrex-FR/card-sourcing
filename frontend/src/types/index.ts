@@ -58,6 +58,9 @@ export type UserSettings = {
   notify_watching: boolean | null;
   discord_mention_here: boolean | null;
   discord_mention_at_minutes: number | null;
+  daily_summary_enabled: boolean | null;
+  daily_summary_hour: number | null;
+  notify_max_bid_exceeded: boolean | null;
 };
 
 export type ScanResult = {

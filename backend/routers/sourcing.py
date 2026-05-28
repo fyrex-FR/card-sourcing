@@ -69,6 +69,9 @@ class UserSettingsUpdate(BaseModel):
     notify_watching: bool | None = None
     discord_mention_here: bool | None = None
     discord_mention_at_minutes: int | None = Field(default=None, ge=1, le=240)
+    daily_summary_enabled: bool | None = None
+    daily_summary_hour: int | None = Field(default=None, ge=0, le=23)
+    notify_max_bid_exceeded: bool | None = None
 
 
 class TestNotificationRequest(BaseModel):
@@ -79,6 +82,7 @@ OPTIONAL_ITEM_COLUMNS = {
     "auction_end_at", "bid_count", "match_query", "match_quality",
     "max_bid", "note",
     "notify_enabled", "notify_minutes_before", "notify_minutes_before_secondary",
+    "notified_max_bid_exceeded_at",
 }
 OPTIONAL_FAVORITE_COLUMNS = {"shipping_estimate"}
 
