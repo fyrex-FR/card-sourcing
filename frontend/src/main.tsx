@@ -1016,6 +1016,11 @@ function App() {
               />
               <span>Alerte si le prix depasse mon max d'enchere</span>
             </label>
+            <small className="settings-warning">
+              ⚠ Consomme le quota eBay (5000 appels/jour). Au-dela de ~17 cartes "a encherir"
+              avec un max defini en parallele, on risque le 429. Si t'en as plus, baisse la
+              frequence ou desactive l'alerte.
+            </small>
             <label className="settings-checkbox">
               <input
                 type="checkbox"

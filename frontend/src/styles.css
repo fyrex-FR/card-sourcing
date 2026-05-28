@@ -2000,6 +2000,16 @@ a {
   background: #21252a;
 }
 
+.settings-warning {
+  color: #e8b072;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgb(214 145 60 / 0.08);
+  border-left: 2px solid rgb(214 145 60 / 0.4);
+}
+
 .settings-hint {
   color: #6f7277;
   font-size: 11px;
