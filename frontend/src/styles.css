@@ -1276,20 +1276,26 @@ a {
   margin-top: 6px;
 }
 
-.opp-comps-tray a {
+.opp-comps-tray a,
+.opp-comps-tray button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-height: auto;
   padding: 5px 10px;
   border: 1px solid #393d42;
   border-radius: 6px;
   background: #0f1113;
   color: #d8d6cf;
   font-size: 11px;
+  font-weight: 400;
   text-decoration: none;
+  cursor: pointer;
+  font-family: inherit;
 }
 
-.opp-comps-tray a:hover {
+.opp-comps-tray a:hover,
+.opp-comps-tray button:hover {
   border-color: #f4d182;
   color: #f4d182;
 }

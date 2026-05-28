@@ -219,6 +219,20 @@ export function ebaySoldUrl(query: string): string {
   return `https://www.ebay.com/sch/i.html?_nkw=${encodeForUrl(query)}&LH_Sold=1&LH_Complete=1`;
 }
 
-export function point130Url(query: string): string {
-  return `https://130point.com/sales/?q=${encodeForUrl(query)}`;
+export const point130BaseUrl = 'https://130point.com/sales/';
+
+/**
+ * 130point n'accepte pas de query string. La technique : copier la requete
+ * dans le presse-papier puis ouvrir la page. L'utilisateur n'a plus qu'a
+ * coller dans le champ de recherche du site.
+ */
+export async function openPoint130(query: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(query);
+  } catch {
+    // Si le navigateur refuse (ex: contexte non secure, permissions), on
+    // ouvre quand meme la page. L'utilisateur tapera la requete a la main.
+  }
+  window.open(point130BaseUrl, '_blank', 'noopener,noreferrer');
 }
+

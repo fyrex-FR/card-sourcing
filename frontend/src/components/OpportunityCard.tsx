@@ -8,7 +8,7 @@ import {
   totalPrice,
   type SignalContext,
 } from '../lib/itemSignals';
-import { buildSearchQueries, ebaySoldUrl, extractKeywords, point130Url } from '../lib/cardKeywords';
+import { buildSearchQueries, ebaySoldUrl, extractKeywords, openPoint130 } from '../lib/cardKeywords';
 
 function money(value: number | null, currency = 'USD') {
   if (value === null || Number.isNaN(value)) return '-';
@@ -150,14 +150,17 @@ export function OpportunityCard({ item, ctx, variant = 'full', onAddToBasket, on
             >
               eBay vendus (large) <ExternalLink size={11} />
             </a>
-            <a
-              href={point130Url(queries.precise)}
-              target="_blank"
-              rel="noreferrer"
-              title={queries.precise}
+            <button
+              type="button"
+              className="opp-comps-130"
+              title={`Copie "${queries.precise}" et ouvre 130point`}
+              onClick={(event) => {
+                event.preventDefault();
+                openPoint130(queries.precise);
+              }}
             >
               130point <ExternalLink size={11} />
-            </a>
+            </button>
           </div>
           <div className="opp-comps-keywords">
             {keywords.player && <span>{keywords.player}</span>}
