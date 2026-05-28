@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from routers.auth import current_user
+from services.discord_service import send_test_notification
 from services.ebay_service import search_active_listings, search_seller_ending_auctions
 from services.supabase_rest import request
 
@@ -54,6 +55,15 @@ class SellerFavoriteCreate(BaseModel):
 class SellerFavoriteUpdate(BaseModel):
     note: str | None = Field(default=None, max_length=500)
     shipping_estimate: float | None = Field(default=None, ge=0)
+
+
+class UserSettingsUpdate(BaseModel):
+    discord_webhook_url: str | None = Field(default=None, max_length=500)
+    notify_minutes_before: int | None = Field(default=None, ge=1, le=240)
+
+
+class TestNotificationRequest(BaseModel):
+    discord_webhook_url: str = Field(min_length=10, max_length=500)
 
 
 OPTIONAL_ITEM_COLUMNS = {"auction_end_at", "bid_count", "match_query", "match_quality", "max_bid", "note"}
@@ -367,3 +377,47 @@ async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
         "candidate_count": len(candidates),
         "items": saved,
     }
+
+
+@router.get("/settings")
+async def get_user_settings(user: dict = Depends(current_user)):
+    user_id = _user_id(user)
+    rows = await request(
+        "GET",
+        "sourcing_user_settings",
+        params={"user_id": f"eq.{user_id}", "limit": "1"},
+    )
+    if rows:
+        return rows[0]
+    # Renvoie une structure par defaut si pas encore de ligne
+    return {
+        "user_id": user_id,
+        "discord_webhook_url": None,
+        "notify_minutes_before": 30,
+    }
+
+
+@router.patch("/settings")
+async def update_user_settings(body: UserSettingsUpdate, user: dict = Depends(current_user)):
+    payload = {key: value for key, value in body.model_dump(exclude_unset=True).items()}
+    if not payload:
+        raise HTTPException(status_code=400, detail="empty_update")
+    user_id = _user_id(user)
+    payload["user_id"] = user_id
+    rows = await request(
+        "POST",
+        "sourcing_user_settings",
+        json=payload,
+        prefer="return=representation,resolution=merge-duplicates",
+    )
+    return rows[0] if rows else payload
+
+
+@router.post("/settings/test-notification")
+async def test_notification(body: TestNotificationRequest, user: dict = Depends(current_user)):
+    _user_id(user)
+    ok, message = await send_test_notification(body.discord_webhook_url)
+    if not ok:
+        raise HTTPException(status_code=400, detail=message)
+    return {"ok": True}
+

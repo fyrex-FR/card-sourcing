@@ -1835,6 +1835,60 @@ a {
   color: #6f7277;
 }
 
+.settings-block {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 14px;
+  padding: 12px;
+  border: 1px solid #292d31;
+  border-radius: 8px;
+  background: #15181b;
+}
+
+.settings-block label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #a9aaa7;
+}
+
+.settings-block input {
+  background: #0f1113;
+  border: 1px solid #2d3138;
+  color: #f4f1eb;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  width: 100%;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.settings-actions button {
+  flex: 1;
+  min-height: auto;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.settings-message {
+  color: #d8d6cf;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #21252a;
+}
+
+.settings-hint {
+  color: #6f7277;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 /* ===== Suggestions strip ===== */
 .suggestions-strip {
   display: grid;

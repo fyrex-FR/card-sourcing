@@ -177,6 +177,12 @@ function App() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showEnded, setShowEnded] = useState(false);
   const [favoriteSellers, setFavoriteSellers] = useState<SellerFavorite[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [discordWebhook, setDiscordWebhook] = useState<string>('');
+  const [discordWebhookSaved, setDiscordWebhookSaved] = useState<string>('');
+  const [notifyMinutes, setNotifyMinutes] = useState<number>(30);
+  const [settingsBusy, setSettingsBusy] = useState<'' | 'save' | 'test'>('');
+  const [settingsMessage, setSettingsMessage] = useState<string>('');
 
   const favoriteSellerUsernames = useMemo(
     () => new Set(favoriteSellers.map((favorite) => favorite.seller_username)),
@@ -431,16 +437,22 @@ function App() {
 
   async function load() {
     setError('');
-    const [nextWatchlists, favorites, nextItems] = await Promise.all([
+    const [nextWatchlists, favorites, nextItems, settings] = await Promise.all([
       apiFetch<Watchlist[]>('/watchlists'),
       apiFetch<SellerFavorite[]>('/seller-favorites').catch(() => [] as SellerFavorite[]),
       apiFetch<SourcingItem[]>('/items'),
+      apiFetch<{ discord_webhook_url: string | null; notify_minutes_before: number | null }>(
+        '/settings',
+      ).catch(() => ({ discord_webhook_url: null, notify_minutes_before: 30 })),
     ]);
     setWatchlists(nextWatchlists);
     setFavoriteSellers(favorites);
     const active = selectedId ?? nextWatchlists[0]?.id;
     setSelectedId(active ?? null);
     setAllItems(nextItems);
+    setDiscordWebhook(settings.discord_webhook_url ?? '');
+    setDiscordWebhookSaved(settings.discord_webhook_url ?? '');
+    setNotifyMinutes(settings.notify_minutes_before ?? 30);
   }
 
   useEffect(() => {
@@ -667,6 +679,53 @@ function App() {
     }
   }
 
+  async function saveSettings() {
+    setSettingsBusy('save');
+    setSettingsMessage('');
+    try {
+      const cleaned = discordWebhook.trim();
+      const updated = await apiFetch<{ discord_webhook_url: string | null; notify_minutes_before: number | null }>(
+        '/settings',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            discord_webhook_url: cleaned === '' ? null : cleaned,
+            notify_minutes_before: notifyMinutes,
+          }),
+        },
+      );
+      setDiscordWebhookSaved(updated.discord_webhook_url ?? '');
+      setDiscordWebhook(updated.discord_webhook_url ?? '');
+      setNotifyMinutes(updated.notify_minutes_before ?? 30);
+      setSettingsMessage('Reglages enregistres.');
+    } catch (err) {
+      setSettingsMessage(err instanceof Error ? err.message : 'Erreur enregistrement');
+    } finally {
+      setSettingsBusy('');
+    }
+  }
+
+  async function testDiscord() {
+    const cleaned = discordWebhook.trim();
+    if (!cleaned) {
+      setSettingsMessage("Colle d'abord ton webhook Discord.");
+      return;
+    }
+    setSettingsBusy('test');
+    setSettingsMessage('');
+    try {
+      await apiFetch('/settings/test-notification', {
+        method: 'POST',
+        body: JSON.stringify({ discord_webhook_url: cleaned }),
+      });
+      setSettingsMessage('Test envoye - regarde ton Discord.');
+    } catch (err) {
+      setSettingsMessage(err instanceof Error ? err.message : 'Echec du test');
+    } finally {
+      setSettingsBusy('');
+    }
+  }
+
   async function saveNote(item: SourcingItem) {
     const input = window.prompt('Note privee', item.note ?? '');
     if (input === null) return;
@@ -795,6 +854,56 @@ function App() {
             </div>
           )}
         </div>
+
+        <button
+          type="button"
+          className={settingsOpen ? 'sidebar-add open' : 'sidebar-add'}
+          onClick={() => setSettingsOpen((value) => !value)}
+        >
+          {discordWebhookSaved ? 'Notifications Discord ON' : 'Notifications Discord'}
+        </button>
+
+        {settingsOpen && (
+          <div className="settings-block">
+            <label htmlFor="discord-url">URL du webhook</label>
+            <input
+              id="discord-url"
+              type="url"
+              placeholder="https://discord.com/api/webhooks/..."
+              value={discordWebhook}
+              onChange={(event) => setDiscordWebhook(event.target.value)}
+              autoComplete="off"
+            />
+            <label htmlFor="notify-mins">Alerter X minutes avant fin</label>
+            <input
+              id="notify-mins"
+              type="number"
+              min="5"
+              max="240"
+              step="5"
+              value={notifyMinutes}
+              onChange={(event) => setNotifyMinutes(Number(event.target.value) || 30)}
+            />
+            <div className="settings-actions">
+              <button type="button" onClick={saveSettings} disabled={settingsBusy !== ''}>
+                {settingsBusy === 'save' ? '...' : 'Enregistrer'}
+              </button>
+              <button
+                type="button"
+                className="ghost"
+                onClick={testDiscord}
+                disabled={settingsBusy !== '' || !discordWebhook.trim()}
+              >
+                {settingsBusy === 'test' ? '...' : 'Tester'}
+              </button>
+            </div>
+            {settingsMessage && <small className="settings-message">{settingsMessage}</small>}
+            <small className="settings-hint">
+              Discord {'>'} ton serveur {'>'} channel {'>'} Modifier {'>'} Integrations {'>'} Webhooks.
+              On t'enverra un embed quand une enchere "a encherir", "au panier" ou "a suivre" termine bientot.
+            </small>
+          </div>
+        )}
       </aside>
 
       <section className={`content mobile-view-${mobileView}${sellerPanel ? ' seller-mode' : ''}`}>
