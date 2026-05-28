@@ -106,10 +106,11 @@ def _is_missing_optional_column(exc: HTTPException) -> bool:
 
 
 async def _get_watchlist(watchlist_id: str, user: dict) -> dict[str, Any]:
+    _ = user  # mode partage : on accepte tout user authentifie
     rows = await request(
         "GET",
         "sourcing_watchlists",
-        params={"id": f"eq.{watchlist_id}", "user_id": f"eq.{_user_id(user)}", "limit": "1"},
+        params={"id": f"eq.{watchlist_id}", "limit": "1"},
     )
     if not rows:
         raise HTTPException(status_code=404, detail="watchlist_not_found")
@@ -118,16 +119,19 @@ async def _get_watchlist(watchlist_id: str, user: dict) -> dict[str, Any]:
 
 @router.get("/watchlists")
 async def list_watchlists(user: dict = Depends(current_user)):
+    _ = user
     return await request(
         "GET",
         "sourcing_watchlists",
-        params={"user_id": f"eq.{_user_id(user)}", "order": "created_at.desc"},
+        params={"order": "created_at.desc"},
     )
 
 
 @router.post("/watchlists", status_code=201)
 async def create_watchlist(body: WatchlistCreate, user: dict = Depends(current_user)):
     payload = body.model_dump()
+    # On garde user_id comme info "createur" pour audit, meme si la
+    # watchlist est ensuite visible/editable par toute l'equipe.
     payload["user_id"] = _user_id(user)
     rows = await request("POST", "sourcing_watchlists", json=payload, prefer="return=representation")
     return rows[0]
@@ -142,7 +146,7 @@ async def update_watchlist(watchlist_id: str, body: WatchlistUpdate, user: dict 
     rows = await request(
         "PATCH",
         "sourcing_watchlists",
-        params={"id": f"eq.{watchlist_id}", "user_id": f"eq.{_user_id(user)}"},
+        params={"id": f"eq.{watchlist_id}"},
         json=payload,
         prefer="return=representation",
     )
@@ -151,16 +155,18 @@ async def update_watchlist(watchlist_id: str, body: WatchlistUpdate, user: dict 
 
 @router.delete("/watchlists/{watchlist_id}", status_code=204)
 async def delete_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
+    _ = user
     await request(
         "DELETE",
         "sourcing_watchlists",
-        params={"id": f"eq.{watchlist_id}", "user_id": f"eq.{_user_id(user)}"},
+        params={"id": f"eq.{watchlist_id}"},
     )
 
 
 @router.get("/items")
 async def list_items(watchlist_id: str | None = None, status: str | None = None, user: dict = Depends(current_user)):
-    params = {"user_id": f"eq.{_user_id(user)}", "order": "first_seen_at.desc", "limit": "1000"}
+    _ = user
+    params = {"order": "first_seen_at.desc", "limit": "1000"}
     if watchlist_id:
         params["watchlist_id"] = f"eq.{watchlist_id}"
     if status:
@@ -170,10 +176,11 @@ async def list_items(watchlist_id: str | None = None, status: str | None = None,
 
 @router.patch("/items/{item_id}/status")
 async def update_item_status(item_id: str, body: ItemStatusUpdate, user: dict = Depends(current_user)):
+    _ = user
     rows = await request(
         "PATCH",
         "sourcing_items",
-        params={"id": f"eq.{item_id}", "user_id": f"eq.{_user_id(user)}"},
+        params={"id": f"eq.{item_id}"},
         json={"status": body.status},
         prefer="return=representation",
     )
@@ -184,15 +191,15 @@ async def update_item_status(item_id: str, body: ItemStatusUpdate, user: dict = 
 
 @router.patch("/items/{item_id}")
 async def update_item(item_id: str, body: ItemUpdate, user: dict = Depends(current_user)):
+    _ = user
     payload = {key: value for key, value in body.model_dump().items() if value is not None}
     if not payload:
         raise HTTPException(status_code=400, detail="empty_update")
-    user_id = _user_id(user)
     try:
         rows = await request(
             "PATCH",
             "sourcing_items",
-            params={"id": f"eq.{item_id}", "user_id": f"eq.{user_id}"},
+            params={"id": f"eq.{item_id}"},
             json=payload,
             prefer="return=representation",
         )
@@ -205,7 +212,7 @@ async def update_item(item_id: str, body: ItemUpdate, user: dict = Depends(curre
         rows = await request(
             "PATCH",
             "sourcing_items",
-            params={"id": f"eq.{item_id}", "user_id": f"eq.{user_id}"},
+            params={"id": f"eq.{item_id}"},
             json=cleaned,
             prefer="return=representation",
         )
@@ -216,16 +223,19 @@ async def update_item(item_id: str, body: ItemUpdate, user: dict = Depends(curre
 
 @router.get("/seller-favorites")
 async def list_seller_favorites(user: dict = Depends(current_user)):
+    _ = user
     return await request(
         "GET",
         "sourcing_seller_favorites",
-        params={"user_id": f"eq.{_user_id(user)}", "order": "created_at.desc"},
+        params={"order": "created_at.desc"},
     )
 
 
 @router.post("/seller-favorites", status_code=201)
 async def add_seller_favorite(body: SellerFavoriteCreate, user: dict = Depends(current_user)):
     payload = body.model_dump()
+    # On garde user_id comme info "createur" mais en mode partage la PK
+    # ne contient plus user_id (juste seller_username).
     payload["user_id"] = _user_id(user)
     try:
         rows = await request(
@@ -248,11 +258,11 @@ async def add_seller_favorite(body: SellerFavoriteCreate, user: dict = Depends(c
 
 @router.patch("/seller-favorites/{seller_username}")
 async def update_seller_favorite(seller_username: str, body: SellerFavoriteUpdate, user: dict = Depends(current_user)):
+    _ = user
     payload = {key: value for key, value in body.model_dump().items() if value is not None}
     if not payload:
         raise HTTPException(status_code=400, detail="empty_update")
-    user_id = _user_id(user)
-    params = {"seller_username": f"eq.{seller_username}", "user_id": f"eq.{user_id}"}
+    params = {"seller_username": f"eq.{seller_username}"}
     try:
         rows = await request(
             "PATCH",
@@ -281,13 +291,11 @@ async def update_seller_favorite(seller_username: str, body: SellerFavoriteUpdat
 
 @router.delete("/seller-favorites/{seller_username}", status_code=204)
 async def remove_seller_favorite(seller_username: str, user: dict = Depends(current_user)):
+    _ = user
     await request(
         "DELETE",
         "sourcing_seller_favorites",
-        params={
-            "seller_username": f"eq.{seller_username}",
-            "user_id": f"eq.{_user_id(user)}",
-        },
+        params={"seller_username": f"eq.{seller_username}"},
     )
 
 
@@ -340,9 +348,9 @@ async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
             continue
         candidates.append(item)
 
-    # Upsert en lot via la contrainte unique (user_id, watchlist_id, source, external_id).
-    # Le PostgREST resolution=merge-duplicates met a jour les colonnes presentes dans le
-    # payload sans toucher aux autres (notamment status, note, max_bid si user en a mis).
+    # Upsert en lot via la nouvelle contrainte unique partagee
+    # (watchlist_id, source, external_id). Le user_id est conserve uniquement
+    # comme info "createur" et n'entre plus dans la dedup.
     saved: list[dict[str, Any]] = []
     if candidates:
         batch = [
@@ -356,7 +364,7 @@ async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
             }
             for item in candidates
         ]
-        on_conflict = "user_id,watchlist_id,source,external_id"
+        on_conflict = "watchlist_id,source,external_id"
         try:
             saved = await request(
                 "POST",
@@ -380,7 +388,7 @@ async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
     await request(
         "PATCH",
         "sourcing_watchlists",
-        params={"id": f"eq.{watchlist_id}", "user_id": f"eq.{user_id}"},
+        params={"id": f"eq.{watchlist_id}"},
         json={"last_scan_at": now_iso},
     )
 
