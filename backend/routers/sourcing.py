@@ -401,33 +401,38 @@ async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
 
 
 @router.get("/settings")
-async def get_user_settings(user: dict = Depends(current_user)):
-    user_id = _user_id(user)
+async def get_team_settings(user: dict = Depends(current_user)):
+    _ = user
     rows = await request(
         "GET",
-        "sourcing_user_settings",
-        params={"user_id": f"eq.{user_id}", "limit": "1"},
+        "sourcing_team_settings",
+        params={"id": "eq.true", "limit": "1"},
     )
     if rows:
         return rows[0]
-    # Renvoie une structure par defaut si pas encore de ligne
+    # Defaut si la ligne singleton n'existe pas encore
     return {
-        "user_id": user_id,
         "discord_webhook_url": None,
         "notify_minutes_before": 30,
+        "notify_minutes_before_secondary": None,
+        "notify_bid_planned": True,
+        "notify_in_basket": False,
+        "notify_watching": False,
+        "discord_mention_here": False,
+        "discord_mention_at_minutes": 10,
     }
 
 
 @router.patch("/settings")
-async def update_user_settings(body: UserSettingsUpdate, user: dict = Depends(current_user)):
+async def update_team_settings(body: UserSettingsUpdate, user: dict = Depends(current_user)):
+    _ = user
     payload = {key: value for key, value in body.model_dump(exclude_unset=True).items()}
     if not payload:
         raise HTTPException(status_code=400, detail="empty_update")
-    user_id = _user_id(user)
-    payload["user_id"] = user_id
+    payload["id"] = True
     rows = await request(
         "POST",
-        "sourcing_user_settings",
+        "sourcing_team_settings",
         json=payload,
         prefer="return=representation,resolution=merge-duplicates",
     )
