@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from routers.auth import current_user
+from services.clutchcollect_service import search_clutch_deals
 from services.discord_service import send_test_notification
 from services.ebay_service import search_active_listings, search_seller_ending_auctions
 from services.supabase_rest import request
@@ -320,6 +321,27 @@ async def seller_ending_auctions(
     )
 
 
+@router.get("/clutch/deals")
+async def clutch_deals(
+    query: str = "",
+    sale_filter: Literal["all", "auctions", "listings"] = "auctions",
+    order: str = "ending_soon",
+    sport: str | None = "9",
+    pages: int = 2,
+    limit: int = 24,
+    user: dict = Depends(current_user),
+):
+    _user_id(user)
+    return await search_clutch_deals(
+        query=query,
+        sale_filter=sale_filter,
+        order=order,
+        sport=sport,
+        pages=pages,
+        limit=limit,
+    )
+
+
 @router.post("/watchlists/{watchlist_id}/scan")
 async def scan_watchlist(watchlist_id: str, user: dict = Depends(current_user)):
     watchlist = await _get_watchlist(watchlist_id, user)
@@ -450,4 +472,3 @@ async def test_notification(body: TestNotificationRequest, user: dict = Depends(
     if not ok:
         raise HTTPException(status_code=400, detail=message)
     return {"ok": True}
-

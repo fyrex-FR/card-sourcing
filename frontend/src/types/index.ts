@@ -82,3 +82,45 @@ export type SellerAuctionResult = {
   error?: string;
   details?: string;
 };
+
+export type ClutchDeal = {
+  source: 'clutchcollect';
+  source_id: string;
+  sale_type: 'auction' | 'listing' | string;
+  title: string;
+  player: string;
+  team: string;
+  year: string;
+  manufacturer: string;
+  program: string;
+  set_name: string;
+  card_number: string;
+  serial_number: string;
+  sequence_number: string;
+  grade: string;
+  price: number | null;
+  currency: string;
+  seller: string;
+  ends_at: string;
+  total_bids: number | null;
+  image_url: string;
+  clutch_url: string;
+  comp_query: string;
+  ebay_sold_url: string;
+  one30point_url: string;
+  score: number;
+  reasons: string[];
+};
+
+export type ClutchDealsResult = {
+  count: number;
+  stats: {
+    totalSales?: number;
+    totalResults?: number;
+    totalListings?: number;
+    totalAuctions?: number;
+    currentPage?: number;
+    totalPages?: number;
+  };
+  results: ClutchDeal[];
+};
