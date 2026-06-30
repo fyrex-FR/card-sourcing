@@ -100,17 +100,21 @@ def _price_for_sale(sale: dict[str, Any]) -> tuple[float | None, str, str, int |
 
 def _comp_query(collectible: dict[str, Any], owned: dict[str, Any]) -> str:
     set_data = collectible.get("collectibleSet") or {}
+    card_number = _text(collectible.get("number"))
+    serial_number = _text(owned.get("serialNumber"))
+    sequence = _text(collectible.get("sequenceNumber"))
     parts = [
         _text(set_data.get("releaseYear")),
         _text(set_data.get("manufacturer")),
         _text(set_data.get("program")),
         _text(set_data.get("setName")),
         _text(collectible.get("player")),
-        _text(collectible.get("number")),
+        f"#{card_number}" if card_number else "",
     ]
-    sequence = _text(collectible.get("sequenceNumber"))
     if sequence and sequence != "0":
         parts.append(f"/{sequence}")
+    if serial_number and sequence and serial_number != "0" and sequence != "0":
+        parts.append(f"{serial_number}/{sequence}")
     grade = _text(owned.get("gradingService"))
     grade_num = _text(owned.get("gradingGrade"))
     if grade and grade.lower() not in {"none", "null"}:
@@ -181,7 +185,7 @@ def _normalize_sale(sale: dict[str, Any]) -> ClutchDeal:
     price, currency, ends_at, total_bids = _price_for_sale(sale)
     comp_query = _comp_query(collectible, owned)
     score, reasons = _score(sale_type, price, collectible, owned, sale)
-    ebay_params = urlencode({"q": comp_query, "LH_Sold": "1", "LH_Complete": "1"})
+    ebay_params = urlencode({"_nkw": comp_query, "LH_Sold": "1", "LH_Complete": "1", "_sop": "13"})
     return ClutchDeal(
         source="clutchcollect",
         source_id=_text(source_id),
