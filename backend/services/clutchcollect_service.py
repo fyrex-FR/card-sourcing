@@ -109,6 +109,7 @@ def _comp_query(collectible: dict[str, Any], owned: dict[str, Any]) -> str:
         _text(set_data.get("program")),
         _text(set_data.get("setName")),
         _text(collectible.get("player")),
+        _text(collectible.get("team")),
         f"#{card_number}" if card_number else "",
     ]
     if sequence and sequence != "0":
