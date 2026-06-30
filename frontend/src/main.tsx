@@ -867,6 +867,33 @@ function App() {
     }
   }
 
+  function clutchClipboardText(deal: ClutchDeal) {
+    return deal.comp_query || [
+      deal.year,
+      deal.manufacturer,
+      deal.set_name,
+      deal.player,
+      deal.team,
+      deal.card_number ? `#${deal.card_number.replace(/^#/, '')}` : '',
+      deal.sequence_number && deal.sequence_number !== '0' ? `/${deal.sequence_number}` : '',
+      deal.serial_number && deal.sequence_number && deal.serial_number !== '0' && deal.sequence_number !== '0'
+        ? `${deal.serial_number}/${deal.sequence_number}`
+        : '',
+      deal.grade,
+    ].filter(Boolean).join(' ');
+  }
+
+  async function copyClutchInfo(deal: ClutchDeal) {
+    const text = clutchClipboardText(deal);
+    if (!text) return;
+    try {
+      await navigator.clipboard?.writeText(text);
+      setClutchMessage(`Copie pour 130point : ${text}`);
+    } catch {
+      setClutchMessage(`A copier dans 130point : ${text}`);
+    }
+  }
+
   async function updateItemNotify(item: SourcingItem, patch: {
     notify_enabled?: boolean | null;
     notify_minutes_before?: number | null;
@@ -1354,7 +1381,7 @@ function App() {
                         </button>
                         <a href={deal.clutch_url} target="_blank" rel="noreferrer">Clutch</a>
                         <a href={deal.ebay_sold_url} target="_blank" rel="noreferrer">eBay sold</a>
-                        <a href={deal.one30point_url} target="_blank" rel="noreferrer">130point</a>
+                        <a href={deal.one30point_url} target="_blank" rel="noreferrer" onClick={() => copyClutchInfo(deal)}>130point</a>
                       </div>
                     </div>
                   </article>
@@ -1452,7 +1479,7 @@ function App() {
                         <a className="primary-link" href={deal.ebay_sold_url} target="_blank" rel="noreferrer">
                           <ExternalLink size={14} /> Last sold eBay
                         </a>
-                        <a href={deal.one30point_url} target="_blank" rel="noreferrer">130point</a>
+                        <a href={deal.one30point_url} target="_blank" rel="noreferrer" onClick={() => copyClutchInfo(deal)}>130point</a>
                         <a href={deal.clutch_url} target="_blank" rel="noreferrer">Clutch</a>
                       </div>
                     </article>
