@@ -20,6 +20,7 @@ type FormState = {
 type StatusFilter = 'all' | SourcingItem['status'];
 type TimeFilter = 'all' | 'today' | 'tomorrow' | 'week' | 'ended' | 'undated';
 type MobileView = 'action' | 'sellers' | 'cards' | 'clutch';
+type PageMode = 'sourcing' | 'clutch';
 
 const initialForm: FormState = {
   name: '',
@@ -171,6 +172,7 @@ function App() {
   const [form, setForm] = useState<FormState>(initialForm);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+  const [pageMode, setPageMode] = useState<PageMode>('sourcing');
   const [mobileView, setMobileView] = useState<MobileView>('action');
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -903,6 +905,30 @@ function App() {
           {createOpen ? 'Annuler' : 'Nouvelle recherche'}
         </button>
 
+        <div className="workspace-nav" aria-label="Navigation principale">
+          <button
+            type="button"
+            className={pageMode === 'sourcing' ? 'selected' : ''}
+            onClick={() => {
+              setPageMode('sourcing');
+              setMobileSearchOpen(false);
+            }}
+          >
+            <Search size={15} /> Sourcing eBay
+          </button>
+          <button
+            type="button"
+            className={pageMode === 'clutch' ? 'selected' : ''}
+            onClick={() => {
+              setPageMode('clutch');
+              setMobileView('clutch');
+              setMobileSearchOpen(false);
+            }}
+          >
+            <Store size={15} /> Clutch Live
+          </button>
+        </div>
+
         {createOpen && (
           <form
             className="watch-form"
@@ -941,6 +967,7 @@ function App() {
               className={watchlist.id === selectedWatchlist?.id ? 'watchlist active' : 'watchlist'}
               onClick={() => {
                 setSelectedId(watchlist.id);
+                setPageMode('sourcing');
                 setMobileSearchOpen(false);
               }}
             >
@@ -1095,17 +1122,17 @@ function App() {
         )}
       </aside>
 
-      <section className={`content mobile-view-${mobileView}${sellerPanel ? ' seller-mode' : ''}`}>
+      <section className={`content mode-${pageMode} mobile-view-${mobileView}${sellerPanel ? ' seller-mode' : ''}`}>
         <div className="mobile-command">
           <button className="ghost" onClick={() => setMobileSearchOpen(true)}>
             <Menu size={17} /> Recherches
           </button>
           {selectedWatchlist && !sellerPanel && (
             <button
-              onClick={() => (mobileView === 'clutch' ? scanClutch() : scan(selectedWatchlist.id))}
-              disabled={mobileView === 'clutch' ? clutchBusy : busy === `scan:${selectedWatchlist.id}`}
+              onClick={() => (pageMode === 'clutch' || mobileView === 'clutch' ? scanClutch() : scan(selectedWatchlist.id))}
+              disabled={pageMode === 'clutch' || mobileView === 'clutch' ? clutchBusy : busy === `scan:${selectedWatchlist.id}`}
             >
-              <RefreshCw size={16} /> {mobileView === 'clutch' ? 'Clutch' : 'Scanner'}
+              <RefreshCw size={16} /> {pageMode === 'clutch' || mobileView === 'clutch' ? 'Clutch' : 'Scanner'}
             </button>
           )}
           {sellerPanel && (
@@ -1119,10 +1146,22 @@ function App() {
         <>
         <header className="content-header">
           <div>
-            <h1>{selectedWatchlist?.name ?? 'Aucune recherche'}</h1>
-            <p>{selectedWatchlist ? `${selectedWatchlist.query} | ${selectedWatchlist.country_filter} | ${buyingOptionLabels[selectedWatchlist.buying_option ?? 'ALL']} | max ${money(selectedWatchlist.max_price)}` : 'Ajoute une recherche pour commencer.'}</p>
+            <h1>{pageMode === 'clutch' ? 'ClutchCollect Live' : selectedWatchlist?.name ?? 'Aucune recherche'}</h1>
+            <p>
+              {pageMode === 'clutch'
+                ? 'Marche NBA live depuis ClutchCollect, avec ouverture directe des ventes terminees eBay.'
+                : selectedWatchlist
+                  ? `${selectedWatchlist.query} | ${selectedWatchlist.country_filter} | ${buyingOptionLabels[selectedWatchlist.buying_option ?? 'ALL']} | max ${money(selectedWatchlist.max_price)}`
+                  : 'Ajoute une recherche pour commencer.'}
+            </p>
           </div>
-          {selectedWatchlist && (
+          {pageMode === 'clutch' ? (
+            <div className="actions">
+              <button onClick={scanClutch} disabled={clutchBusy}>
+                <RefreshCw size={16} /> {clutchBusy ? 'Scan...' : 'Rafraichir Clutch'}
+              </button>
+            </div>
+          ) : selectedWatchlist && (
             <div className="actions">
               <button onClick={() => scan(selectedWatchlist.id)} disabled={busy === `scan:${selectedWatchlist.id}`}>
                 <RefreshCw size={16} /> Scanner
@@ -1263,14 +1302,19 @@ function App() {
 
             <div className="desktop-stack">
             <section className="clutch-section">
-              <div className="section-title">
-                <Target size={16} />
-                <strong>ClutchCollect</strong>
-                <span>{clutchStats?.totalAuctions ?? 0} encheres NBA actives</span>
+              <div className="section-title clutch-title">
+                <div>
+                  <span>Marche live</span>
+                  <strong>ClutchCollect NBA</strong>
+                </div>
+                <span>
+                  {clutchDeals.length} carte{clutchDeals.length > 1 ? 's' : ''} chargee{clutchDeals.length > 1 ? 's' : ''}
+                  {clutchStats?.totalAuctions ? ` · ${clutchStats.totalAuctions} encheres actives` : ''}
+                </span>
               </div>
               <div className="clutch-controls desktop">
                 <input
-                  placeholder="Recherche Clutch optionnelle"
+                  placeholder="Joueur, set, auto, rookie..."
                   value={clutchQuery}
                   onChange={(event) => setClutchQuery(event.target.value)}
                 />
@@ -1291,32 +1335,51 @@ function App() {
                 </button>
               </div>
               {clutchMessage && <div className="notice success">{clutchMessage}</div>}
-              {clutchDeals.length > 0 && (
-                <div className="clutch-grid">
-                  {clutchDeals.slice(0, 8).map((deal) => (
-                    <article className="clutch-card" key={`${deal.sale_type}:${deal.source_id}`}>
-                      {deal.image_url && <img src={deal.image_url} alt="" loading="lazy" />}
-                      <div className="clutch-card-body">
-                        <div className="clutch-card-top">
+              {clutchDeals.length > 0 ? (
+                <div className="clutch-market">
+                  {clutchDeals.slice(0, 60).map((deal) => (
+                    <article className="clutch-row" key={`${deal.sale_type}:${deal.source_id}`}>
+                      <a className="clutch-thumb" href={deal.clutch_url} target="_blank" rel="noreferrer" aria-label="Ouvrir sur ClutchCollect">
+                        {deal.image_url ? <img src={deal.image_url} alt="" loading="lazy" /> : <Target size={22} />}
+                      </a>
+                      <div className="clutch-main">
+                        <div className="clutch-row-title">
                           <strong>{deal.title || deal.comp_query || 'Carte Clutch'}</strong>
-                          <span className="score-pill">{deal.score}</span>
+                          <span className={deal.sale_type === 'auction' ? 'sale-pill auction' : 'sale-pill'}>{deal.sale_type === 'auction' ? 'Enchere' : 'BIN'}</span>
                         </div>
                         <div className="meta">
-                          {money(deal.price, deal.currency || 'EUR')} · {deal.sale_type === 'auction' ? 'enchere' : 'BIN'}
-                          {deal.ends_at ? ` · ${timeLeftLabel(deal.ends_at, now) ?? dateLabel(deal.ends_at)}` : ''}
+                          {deal.player && <span>{deal.player}</span>}
+                          {deal.team && <span>{deal.team}</span>}
+                          {deal.year && <span>{deal.year}</span>}
+                          {deal.card_number && <span>#{deal.card_number}</span>}
+                          {deal.sequence_number && deal.sequence_number !== '0' && <span>/{deal.sequence_number}</span>}
+                          {deal.grade && <span>{deal.grade}</span>}
                         </div>
                         <div className="signal-tags">
                           {deal.reasons.map((reason) => <span key={reason}>{reason}</span>)}
                         </div>
-                        <div className="clutch-links">
-                          <a href={deal.clutch_url} target="_blank" rel="noreferrer">Clutch</a>
-                          <a href={deal.ebay_sold_url} target="_blank" rel="noreferrer">eBay sold</a>
-                          <a href={deal.one30point_url} target="_blank" rel="noreferrer">130point</a>
-                        </div>
+                      </div>
+                      <div className="clutch-price">
+                        <strong>{money(deal.price, deal.currency || 'EUR')}</strong>
+                        <span>{deal.ends_at ? timeLeftLabel(deal.ends_at, now) ?? dateLabel(deal.ends_at) : 'prix fixe'}</span>
+                        {deal.total_bids !== null && <small>{deal.total_bids} bid{deal.total_bids > 1 ? 's' : ''}</small>}
+                      </div>
+                      <div className="clutch-seller">
+                        <span>Vendeur</span>
+                        <strong>{deal.seller || '-'}</strong>
+                      </div>
+                      <div className="clutch-actions">
+                        <a className="primary-link" href={deal.ebay_sold_url} target="_blank" rel="noreferrer">
+                          <ExternalLink size={14} /> Last sold eBay
+                        </a>
+                        <a href={deal.one30point_url} target="_blank" rel="noreferrer">130point</a>
+                        <a href={deal.clutch_url} target="_blank" rel="noreferrer">Clutch</a>
                       </div>
                     </article>
                   ))}
                 </div>
+              ) : (
+                <div className="empty-state compact">Rafraichis Clutch pour charger le marche NBA live.</div>
               )}
             </section>
             <div className="last-scan-row">
