@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { CalendarDays, Clock, ExternalLink, Eye, Flame, Layers, ListFilter, Menu, RefreshCw, Search, ShoppingBasket, Star, Store, Target, Trash2, X } from 'lucide-react';
+import { CalendarDays, Clock, ExternalLink, Eye, Flame, Layers, ListFilter, Menu, RefreshCw, Search, ShoppingBasket, Sparkles, Star, Store, Target, Trash2, X } from 'lucide-react';
 import { apiFetch } from './api/client';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
 import { OpportunityCard } from './components/OpportunityCard';
 import type { SignalContext } from './lib/itemSignals';
-import type { ClutchDeal, ClutchDealsResult, ScanResult, SellerAuctionResult, SellerFavorite, SourcingItem, UserSettings, Watchlist } from './types';
+import type { ClutchDeal, ClutchEnrichment, ClutchDealsResult, ScanResult, SellerAuctionResult, SellerFavorite, SourcingItem, UserSettings, Watchlist } from './types';
 import './styles.css';
 
 type FormState = {
@@ -201,6 +201,8 @@ function App() {
   const [clutchFilter, setClutchFilter] = useState<'auctions' | 'listings' | 'all'>('auctions');
   const [clutchBusy, setClutchBusy] = useState(false);
   const [clutchMessage, setClutchMessage] = useState('');
+  const [clutchEnrichments, setClutchEnrichments] = useState<Record<string, ClutchEnrichment>>({});
+  const [clutchEnrichBusy, setClutchEnrichBusy] = useState<Record<string, boolean>>({});
 
   const favoriteSellerUsernames = useMemo(
     () => new Set(favoriteSellers.map((favorite) => favorite.seller_username)),
@@ -803,12 +805,65 @@ function App() {
       if (clutchQuery.trim()) params.set('query', clutchQuery.trim());
       const result = await apiFetch<ClutchDealsResult>(`/clutch/deals?${params.toString()}`);
       setClutchDeals(result.results ?? []);
+      setClutchEnrichments({});
+      setClutchEnrichBusy({});
       setClutchStats(result.stats ?? null);
       setClutchMessage(`${result.count} carte${result.count > 1 ? 's' : ''} Clutch analysee${result.count > 1 ? 's' : ''}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur ClutchCollect');
     } finally {
       setClutchBusy(false);
+    }
+  }
+
+  async function enrichClutch(deal: ClutchDeal) {
+    if (!deal.image_url) {
+      setError('Image Clutch manquante pour cette carte.');
+      return;
+    }
+    const key = `${deal.sale_type}:${deal.source_id}`;
+    setClutchEnrichBusy((map) => ({ ...map, [key]: true }));
+    setError('');
+    try {
+      const enrichment = await apiFetch<ClutchEnrichment>('/clutch/enrich', {
+        method: 'POST',
+        body: JSON.stringify({
+          source_id: deal.source_id,
+          image_url: deal.image_url,
+          title: deal.title,
+          player: deal.player,
+          team: deal.team,
+          year: deal.year,
+          manufacturer: deal.manufacturer,
+          program: deal.program,
+          set_name: deal.set_name,
+          card_number: deal.card_number,
+          serial_number: deal.serial_number,
+          sequence_number: deal.sequence_number,
+          grade: deal.grade,
+        }),
+      });
+      setClutchEnrichments((map) => ({ ...map, [key]: enrichment }));
+      setClutchDeals((list) => list.map((entry) => (
+        `${entry.sale_type}:${entry.source_id}` === key
+          ? {
+              ...entry,
+              player: enrichment.player || entry.player,
+              team: enrichment.team || entry.team,
+              year: enrichment.year || entry.year,
+              manufacturer: enrichment.manufacturer || entry.manufacturer,
+              set_name: enrichment.set_name || entry.set_name,
+              card_number: enrichment.card_number?.replace(/^#/, '') || entry.card_number,
+              ebay_sold_url: enrichment.ebay_sold_url || entry.ebay_sold_url,
+              one30point_url: enrichment.one30point_url || entry.one30point_url,
+              comp_query: enrichment.search_query || entry.comp_query,
+            }
+          : entry
+      )));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erreur enrichissement IA');
+    } finally {
+      setClutchEnrichBusy((map) => ({ ...map, [key]: false }));
     }
   }
 
@@ -1269,8 +1324,11 @@ function App() {
               </div>
               {clutchMessage && <div className="notice success">{clutchMessage}</div>}
               <div className="clutch-list">
-                {clutchDeals.slice(0, 24).map((deal) => (
-                  <article className="clutch-card" key={`${deal.sale_type}:${deal.source_id}`}>
+                {clutchDeals.slice(0, 24).map((deal) => {
+                  const enrichKey = `${deal.sale_type}:${deal.source_id}`;
+                  const enrichment = clutchEnrichments[enrichKey];
+                  return (
+                  <article className="clutch-card" key={enrichKey}>
                     {deal.image_url && <img src={deal.image_url} alt="" loading="lazy" />}
                     <div className="clutch-card-body">
                       <div className="clutch-card-top">
@@ -1285,15 +1343,23 @@ function App() {
                       <div className="meta">{deal.seller ? `vendeur ${deal.seller}` : ''}</div>
                       <div className="signal-tags">
                         {deal.reasons.map((reason) => <span key={reason}>{reason}</span>)}
+                        {enrichment?.year && <span>{enrichment.year}</span>}
+                        {enrichment?.manufacturer && <span>{enrichment.manufacturer}</span>}
+                        {enrichment?.set_name && <span>{enrichment.set_name}</span>}
+                        {enrichment?.parallel_name && enrichment.parallel_name !== 'Base' && <span>{enrichment.parallel_name}</span>}
                       </div>
                       <div className="clutch-links">
+                        <button type="button" className="mini-ai-button" onClick={() => enrichClutch(deal)} disabled={clutchEnrichBusy[enrichKey]}>
+                          <Sparkles size={12} /> {clutchEnrichBusy[enrichKey] ? 'IA...' : 'IA'}
+                        </button>
                         <a href={deal.clutch_url} target="_blank" rel="noreferrer">Clutch</a>
                         <a href={deal.ebay_sold_url} target="_blank" rel="noreferrer">eBay sold</a>
                         <a href={deal.one30point_url} target="_blank" rel="noreferrer">130point</a>
                       </div>
                     </div>
                   </article>
-                ))}
+                  );
+                })}
                 {clutchDeals.length === 0 && (
                   <div className="empty-state compact">Scanne Clutch pour sortir les encheres NBA et les liens comps.</div>
                 )}
@@ -1337,8 +1403,11 @@ function App() {
               {clutchMessage && <div className="notice success">{clutchMessage}</div>}
               {clutchDeals.length > 0 ? (
                 <div className="clutch-market">
-                  {clutchDeals.slice(0, 60).map((deal) => (
-                    <article className="clutch-row" key={`${deal.sale_type}:${deal.source_id}`}>
+                  {clutchDeals.slice(0, 60).map((deal) => {
+                    const enrichKey = `${deal.sale_type}:${deal.source_id}`;
+                    const enrichment = clutchEnrichments[enrichKey];
+                    return (
+                    <article className="clutch-row" key={enrichKey}>
                       <a className="clutch-thumb" href={deal.clutch_url} target="_blank" rel="noreferrer" aria-label="Ouvrir sur ClutchCollect">
                         {deal.image_url ? <img src={deal.image_url} alt="" loading="lazy" /> : <Target size={22} />}
                       </a>
@@ -1355,6 +1424,14 @@ function App() {
                           {deal.sequence_number && deal.sequence_number !== '0' && <span>/{deal.sequence_number}</span>}
                           {deal.grade && <span>{deal.grade}</span>}
                         </div>
+                        {enrichment && (
+                          <div className="ai-fields">
+                            {[enrichment.year, enrichment.manufacturer, enrichment.set_name, enrichment.insert_name, enrichment.parallel_name && enrichment.parallel_name !== 'Base' ? enrichment.parallel_name : '', enrichment.numbered, enrichment.is_rookie ? 'rookie' : '', enrichment.is_autograph ? 'auto' : '']
+                              .filter(Boolean)
+                              .map((value) => <span key={String(value)}>{value}</span>)}
+                            <small>{enrichment.confidence}% IA</small>
+                          </div>
+                        )}
                         <div className="signal-tags">
                           {deal.reasons.map((reason) => <span key={reason}>{reason}</span>)}
                         </div>
@@ -1369,6 +1446,9 @@ function App() {
                         <strong>{deal.seller || '-'}</strong>
                       </div>
                       <div className="clutch-actions">
+                        <button type="button" className="ai-action" onClick={() => enrichClutch(deal)} disabled={clutchEnrichBusy[enrichKey] || !deal.image_url}>
+                          <Sparkles size={14} /> {clutchEnrichBusy[enrichKey] ? 'Analyse...' : enrichment ? 'Repasser IA' : 'Enrichir IA'}
+                        </button>
                         <a className="primary-link" href={deal.ebay_sold_url} target="_blank" rel="noreferrer">
                           <ExternalLink size={14} /> Last sold eBay
                         </a>
@@ -1376,7 +1456,8 @@ function App() {
                         <a href={deal.clutch_url} target="_blank" rel="noreferrer">Clutch</a>
                       </div>
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="empty-state compact">Rafraichis Clutch pour charger le marche NBA live.</div>

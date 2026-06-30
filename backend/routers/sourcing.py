@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from routers.auth import current_user
+from services.card_vision_service import enrich_card_from_image
 from services.clutchcollect_service import search_clutch_deals
 from services.discord_service import send_test_notification
 from services.ebay_service import search_active_listings, search_seller_ending_auctions
@@ -77,6 +78,22 @@ class UserSettingsUpdate(BaseModel):
 
 class TestNotificationRequest(BaseModel):
     discord_webhook_url: str = Field(min_length=10, max_length=500)
+
+
+class ClutchEnrichRequest(BaseModel):
+    source_id: str = Field(min_length=1, max_length=200)
+    image_url: str = Field(min_length=8, max_length=2000)
+    title: str | None = Field(default=None, max_length=500)
+    player: str | None = Field(default=None, max_length=200)
+    team: str | None = Field(default=None, max_length=200)
+    year: str | None = Field(default=None, max_length=50)
+    manufacturer: str | None = Field(default=None, max_length=120)
+    program: str | None = Field(default=None, max_length=160)
+    set_name: str | None = Field(default=None, max_length=160)
+    card_number: str | None = Field(default=None, max_length=80)
+    serial_number: str | None = Field(default=None, max_length=80)
+    sequence_number: str | None = Field(default=None, max_length=80)
+    grade: str | None = Field(default=None, max_length=120)
 
 
 OPTIONAL_ITEM_COLUMNS = {
@@ -340,6 +357,20 @@ async def clutch_deals(
         pages=pages,
         limit=limit,
     )
+
+
+@router.post("/clutch/enrich")
+async def clutch_enrich(body: ClutchEnrichRequest, user: dict = Depends(current_user)):
+    _user_id(user)
+    try:
+        return await enrich_card_from_image(
+            image_url=body.image_url,
+            metadata=body.model_dump(),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/watchlists/{watchlist_id}/scan")

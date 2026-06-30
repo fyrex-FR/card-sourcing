@@ -112,6 +112,29 @@ export type ClutchDeal = {
   reasons: string[];
 };
 
+export type ClutchEnrichment = {
+  player: string;
+  team: string;
+  year: string;
+  manufacturer: string;
+  set_name: string;
+  insert_name: string;
+  parallel_name: string;
+  parallel_confidence: number;
+  card_number: string;
+  numbered: string;
+  serial: string;
+  is_rookie: boolean;
+  is_autograph: boolean;
+  is_patch: boolean;
+  card_type: string;
+  search_query: string;
+  confidence: number;
+  ebay_sold_url: string;
+  one30point_url: string;
+  latency_ms: number;
+};
+
 export type ClutchDealsResult = {
   count: number;
   stats: {

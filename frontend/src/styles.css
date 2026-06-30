@@ -338,6 +338,15 @@ button:disabled {
   text-decoration: none;
 }
 
+.mini-ai-button {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid #3b4b55;
+  background: #1b2529;
+  color: #cde8f0;
+  font-size: 12px;
+}
+
 .mode-clutch .desktop-stack > :not(.clutch-section),
 .mode-clutch .cards-toolbar,
 .mode-clutch .items-grid,
@@ -363,7 +372,7 @@ button:disabled {
 .clutch-row {
   min-width: 0;
   display: grid;
-  grid-template-columns: 58px minmax(260px, 1fr) 130px 150px 210px;
+  grid-template-columns: 58px minmax(260px, 1fr) 130px 150px 230px;
   gap: 12px;
   align-items: center;
   border: 1px solid #292d31;
@@ -431,6 +440,29 @@ button:disabled {
   color: #f0cc73;
 }
 
+.ai-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.ai-fields span,
+.ai-fields small {
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px;
+  padding: 0 6px;
+  background: #17262b;
+  color: #cde8f0;
+  font-size: 11px;
+}
+
+.ai-fields small {
+  background: #24282c;
+  color: #a9aaa7;
+}
+
 .clutch-price strong {
   font-size: 18px;
 }
@@ -461,6 +493,14 @@ button:disabled {
   border: 1px solid #393d42;
   border-radius: 7px;
   color: #d8d6cf;
+  font-size: 12px;
+}
+
+.clutch-actions button.ai-action {
+  min-height: 30px;
+  border: 1px solid #3b4b55;
+  background: #1b2529;
+  color: #cde8f0;
   font-size: 12px;
 }
 
