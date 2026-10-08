@@ -74,7 +74,7 @@ export function alertCaption(alert: Alert, search: Search, homeCurrency: string,
   const feedback = [listing.sellerFeedbackPct && `${listing.sellerFeedbackPct}%`, listing.sellerFeedbackScore?.toString()].filter(Boolean);
   let sellerLine = `👤 ${escapeHtml(listing.seller || "vendeur inconnu")}`;
   if (feedback.length > 0) sellerLine += ` (${feedback.join(" · ")})`;
-  if (listing.country) sellerLine += ` · ${flag(listing.country)} ${listing.country}`;
+  if (listing.country) sellerLine += ` · ${[flag(listing.country), listing.country].filter(Boolean).join(" ")}`;
   lines.push(sellerLine);
   if (listing.condition) lines.push(`🏷 ${escapeHtml(listing.condition)}`);
   return lines.join("\n").slice(0, 1024);
@@ -117,7 +117,8 @@ export function seedDigest(search: Search, existing: Alert[], homeCurrency: stri
     "",
     ...existing.slice(0, 5).map(({ listing, totalHome }) => {
       const price = totalHome === null ? money(totalPrice(listing), listing.currency) : money(totalHome, homeCurrency);
-      return `• <a href="${escapeHtml(listing.url)}">${escapeHtml(listing.title.slice(0, 70))}</a> — <b>${price}</b>`;
+      const where = flag(listing.country);
+      return `• ${where ? `${where} ` : ""}<a href="${escapeHtml(listing.url)}">${escapeHtml(listing.title.slice(0, 70))}</a> — <b>${price}</b>`;
     }),
     "",
     "À partir de maintenant, seules les nouveautés te sont envoyées.",
