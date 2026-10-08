@@ -6,7 +6,7 @@ import { EbayError, EbayRateLimitError } from "../ebay/client.js";
 import type { ListingSource } from "../ebay/client.js";
 import { isAuction } from "../ebay/listing.js";
 import type { Listing } from "../ebay/listing.js";
-import { isVinted, marketplaceCurrency } from "../ebay/marketplaces.js";
+import { ebaySites, marketplaceCurrency } from "../ebay/marketplaces.js";
 import type { Converter } from "../fx.js";
 import type { Notifier } from "./notifier.js";
 import { callsPerCycle, intervalSeconds } from "./pacing.js";
@@ -78,8 +78,7 @@ export class Poller {
     const blocked = await repo.blockedSellers();
     const settings = await repo.getState();
     const byKey = new Map<string, PreviewItem>();
-    if (isVinted(criteria)) return [];
-    for (const marketplace of criteria.marketplaces) {
+    for (const marketplace of ebaySites(criteria)) {
       const currency = marketplaceCurrency(marketplace);
       const filters = source.buildFilters({
         buying: criteria.buying,
@@ -199,7 +198,7 @@ export class Poller {
   }
 
   private async check(search: Search): Promise<number> {
-    if (isVinted(search)) return 0;
+    if (ebaySites(search).length === 0) return 0;
     const { repo, fx, notifier } = this.deps;
     await fx.refresh();
     const seed = !search.seeded;
@@ -228,7 +227,7 @@ export class Poller {
     const newly: Listing[] = [];
     const ending: Listing[] = [];
 
-    for (const marketplace of search.marketplaces) {
+    for (const marketplace of ebaySites(search)) {
       const currency = marketplaceCurrency(marketplace);
       const base = { maxPrice: this.apiMaxPrice(search.maxPrice, currency), currency, country: search.country };
 

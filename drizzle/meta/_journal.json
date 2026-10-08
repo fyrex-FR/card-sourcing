@@ -22,6 +22,13 @@
       "when": 1791474786407,
       "tag": "0002_buying_workflow",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791499265882,
+      "tag": "0003_vinted_seeded",
+      "breakpoints": true
     }
   ]
 }

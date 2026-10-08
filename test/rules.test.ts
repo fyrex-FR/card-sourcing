@@ -24,6 +24,7 @@ function search(overrides: Partial<Search> = {}): Search {
     marketplaces: ["EBAY_US"],
     active: true,
     seeded: true,
+    vintedSeeded: false,
     createdAt: NOW,
     lastRunAt: null,
     lastError: null,

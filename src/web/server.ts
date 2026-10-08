@@ -196,10 +196,10 @@ export function createWebApp(deps: WebDeps): Hono {
     );
     const keys = fresh.map((item) => keyOf(item.externalId));
     // Premier passage : le stock existant est enregistré sans alerte.
-    const baseline = !search.seeded;
+    const baseline = !search.vintedSeeded;
     if (baseline) await repo.markSeen(keys, now);
     else await repo.markAlerted(keys, "new", now);
-    await repo.updateSearch(search.id, { seeded: true, lastRunAt: now, lastError: null });
+    await repo.updateSearch(search.id, { vintedSeeded: true, lastRunAt: now, lastError: null });
     return c.json({ stored: fresh.length, baseline, new: baseline ? [] : fresh });
   });
 

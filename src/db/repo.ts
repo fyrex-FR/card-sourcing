@@ -39,23 +39,24 @@ export class Repo {
     return row;
   }
 
-  /** `source` : "ebay" exclut les recherches Vinted, "vinted" ne garde qu'elles. */
+  /** `source` : "ebay" garde celles qui ont au moins un site eBay, "vinted" celles qui incluent Vinted. */
   async listSearches(options: { activeOnly?: boolean; source?: "ebay" | "vinted" } = {}): Promise<Search[]> {
     const isVinted = sql`'VINTED' = ANY(${searches.marketplaces})`;
+    const hasEbay = sql`EXISTS (SELECT 1 FROM unnest(${searches.marketplaces}) AS m WHERE m <> 'VINTED')`;
     return this.db
       .select()
       .from(searches)
       .where(
         and(
           options.activeOnly ? eq(searches.active, true) : undefined,
-          options.source === "ebay" ? sql`NOT (${isVinted})` : options.source === "vinted" ? isVinted : undefined,
+          options.source === "ebay" ? hasEbay : options.source === "vinted" ? isVinted : undefined,
         ),
       )
       .orderBy(asc(searches.id));
   }
 
   async updateSearch(id: number, patch: SearchPatch): Promise<Search | undefined> {
-    const [row] = await this.db.update(searches).set(patch).where(eq(searches.id, id)).returning();
+    const [row] = await this.db.update(searches).set(patch.seeded === false ? { ...patch, vintedSeeded: false } : patch).where(eq(searches.id, id)).returning();
     return row;
   }
 

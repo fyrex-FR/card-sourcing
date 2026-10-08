@@ -20,6 +20,7 @@ export const MARKETPLACES = Object.keys(MARKETPLACE_CURRENCY);
 /** Recherche surveillée hors eBay, par l'agent OpenClaw (voir /api/vinted). */
 export const VINTED = "VINTED";
 
+export const ebaySites = (search: { marketplaces: string[] }): string[] => search.marketplaces.filter((m) => m !== VINTED);
 export const isVinted = (search: { marketplaces: string[] }): boolean => search.marketplaces.includes(VINTED);
 
 export function marketplaceCurrency(marketplace: string): string {

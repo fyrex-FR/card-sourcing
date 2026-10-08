@@ -26,7 +26,7 @@ const fields = {
     .array(z.string().refine((m) => m === VINTED || MARKETPLACES.includes(m), "Site inconnu"))
     .min(1, "Au moins un site")
     .transform((list) => [...new Set(list)])
-    .refine((list) => !list.includes(VINTED) || list.length === 1, "Vinted ne se combine pas avec eBay"),
+  ,
 };
 
 export const SearchInputSchema = z.object({

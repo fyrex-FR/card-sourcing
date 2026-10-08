@@ -1,10 +1,11 @@
 import type { Search } from "../db/schema.js";
+import { ebaySites } from "../ebay/marketplaces.js";
 import { watchesEndingAuctions } from "./rules.js";
 
 /** Appels Browse API pour un passage complet sur ces recherches. */
 export function callsPerCycle(searches: Search[]): number {
   return searches.reduce(
-    (total, search) => total + (watchesEndingAuctions(search) ? 2 : 1) * search.marketplaces.length,
+    (total, search) => total + (watchesEndingAuctions(search) ? 2 : 1) * ebaySites(search).length,
     0,
   );
 }

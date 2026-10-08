@@ -2,6 +2,7 @@ import type { Alert, AlertKind } from "../alerts/rules.js";
 import type { Search } from "../db/schema.js";
 import type { Reminder } from "../alerts/reminders.js";
 import { isAuction, totalPrice } from "../ebay/listing.js";
+import { ebaySites, isVinted } from "../ebay/marketplaces.js";
 
 export const BUYING_LABEL = { ALL: "Tout", AUCTION: "Enchères", FIXED_PRICE: "Achat immédiat" } as const;
 
@@ -85,7 +86,7 @@ export function searchSummary(search: Search, homeCurrency: string): string {
     `<b>${escapeHtml(searchLabel(search))}</b> — ${search.active ? "✅ active" : "⏸ en pause"}`,
     `Prix max (port inclus) : <b>${search.maxPrice === null ? "aucun" : money(search.maxPrice, homeCurrency)}</b>`,
     `Type : ${BUYING_LABEL[search.buying]}`,
-    `Sites eBay : ${search.marketplaces.map((m) => m.slice(5)).join(", ")}`,
+    `Sites eBay : ${[...ebaySites(search).map((m) => m.slice(5)), ...(isVinted(search) ? ["Vinted"] : [])].join(", ")}`,
   ];
   if (search.country) lines.push(`Vendeur situé en : ${flag(search.country)} ${search.country}`);
   if (search.excludes.length > 0) lines.push(`Mots exclus : ${search.excludes.map(escapeHtml).join(", ")}`);

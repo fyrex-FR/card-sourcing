@@ -32,6 +32,8 @@ export const searches = pgTable("searches", {
   active: boolean("active").notNull().default(true),
   /** Faux tant que le stock existant n'a pas été enregistré (premier passage silencieux). */
   seeded: boolean("seeded").notNull().default(false),
+  /** Idem pour la partie Vinted, suivie séparément de la partie eBay. */
+  vintedSeeded: boolean("vinted_seeded").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastRunAt: timestamp("last_run_at", { withTimezone: true }),
   lastError: text("last_error"),

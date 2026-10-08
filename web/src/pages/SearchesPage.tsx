@@ -86,8 +86,9 @@ function SearchRow({ search, homeCurrency, onToggle }: { search: SearchDto; home
   const navigate = useNavigate();
   const tags = [
     search.maxPrice === null ? "Pas de prix max" : `≤ ${money(search.maxPrice, homeCurrency)}`,
-    search.marketplaces.includes("VINTED") ? "Vinted" : BUYING_LABEL[search.buying],
-    !search.marketplaces.includes("VINTED") && `eBay ${search.marketplaces.map((m) => m.replace("EBAY_", "")).join(", ")}`,
+    search.marketplaces.some((m) => m !== "VINTED") && BUYING_LABEL[search.buying],
+    search.marketplaces.some((m) => m !== "VINTED") && `eBay ${search.marketplaces.filter((m) => m !== "VINTED").map((m) => m.replace("EBAY_", "")).join(", ")}`,
+    search.marketplaces.includes("VINTED") && "Vinted",
     search.country && `Vendeurs : ${SELLER_COUNTRIES.find(([code]) => code === search.country)?.[1] ?? search.country}`,
     search.excludes.length > 0 && `${search.excludes.length} mot${search.excludes.length > 1 ? "s" : ""} exclu${search.excludes.length > 1 ? "s" : ""}`,
   ].filter(Boolean);

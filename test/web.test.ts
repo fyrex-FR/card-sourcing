@@ -249,11 +249,24 @@ describe("recherches Vinted (agent OpenClaw)", () => {
     expect(source.calls).toHaveLength(0);
   });
 
-  it("refuse Vinted combiné avec eBay et ignore Vinted dans le poller", async () => {
-    const { login, call, poller, source } = await makeApp();
+  it("recherche mixte : le poller n'interroge qu'eBay, la partie Vinted a son propre premier passage", async () => {
+    const { app, login, json, poller, source } = await makeApp();
     await login();
-    expect((await call("POST", "/api/searches", { query: "x", marketplaces: ["VINTED", "EBAY_US"] })).status).toBe(400);
-    await call("POST", "/api/searches", { query: "x", marketplaces: ["VINTED"] });
+    const search = await json("POST", "/api/searches", { query: "x", marketplaces: ["EBAY_US", "VINTED"] });
+    await poller.runCycle();
+    expect(source.calls.length).toBeGreaterThan(0);
+    expect(source.calls.every((c) => c.marketplace === "EBAY_US")).toBe(true);
+
+    const push = async (items: unknown[]) =>
+      (await app.request("/api/vinted/items", { method: "POST", headers: agent, body: JSON.stringify({ searchId: search.id, items }) })).json() as Promise<any>;
+    expect(await push([item("1", 5)])).toMatchObject({ baseline: true, new: [] });
+    expect((await push([item("2", 6)])).new.map((i: any) => i.externalId)).toEqual(["2"]);
+  });
+
+  it("ignore une recherche Vinted seule dans le poller", async () => {
+    const { login, json, poller, source } = await makeApp();
+    await login();
+    await json("POST", "/api/searches", { query: "x", marketplaces: ["VINTED"] });
     expect(await poller.runCycle()).toBe(0);
     expect(source.calls).toHaveLength(0);
   });
