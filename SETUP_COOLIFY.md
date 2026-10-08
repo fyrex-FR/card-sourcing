@@ -1,0 +1,68 @@
+# Mise en place sur Coolify
+
+Instructions pour déployer l'alerteur eBay. Elles sont écrites pour être suivies par un agent (OpenClaw) ou à la main.
+
+L'app est un **worker Node** : un bot Telegram en long polling et une boucle qui interroge eBay. Elle n'expose aucun port HTTP et n'a besoin d'aucun domaine.
+
+## 1. Base de données
+
+Utiliser le **PostgreSQL applicatif (postgres:16)** du VPS. Ne **jamais** utiliser `coolify-db`.
+
+Créer une base et un utilisateur dédiés :
+
+```sql
+CREATE USER card_alerter WITH PASSWORD '<mot de passe fort généré>';
+CREATE DATABASE card_alerter OWNER card_alerter;
+```
+
+L'URL de connexion utilise le nom d'hôte **interne** du conteneur Postgres dans le réseau Docker de Coolify :
+
+```
+postgres://card_alerter:<mot de passe>@<hôte interne postgres16>:5432/card_alerter
+```
+
+Ne crée pas les tables à la main : l'app applique ses migrations (dossier `drizzle/`) à chaque démarrage.
+
+## 2. Bot Telegram
+
+C'est au propriétaire du bot de le faire, depuis son téléphone : créer un bot avec [@BotFather](https://t.me/BotFather) (`/newbot`), puis transmettre le token.
+
+## 3. Application
+
+- Nouvelle ressource : **Application**, depuis le dépôt GitHub `fyrex-FR/card-sourcing`, branche **`v2`**.
+- Build pack : **Nixpacks**. Il détecte Node et lance `npm ci`, `npm run build` puis `npm start`. Ne pas surcharger ces commandes.
+- Domaine : **aucun**.
+- Health check : **désactivé**, car il n'y a pas de serveur HTTP.
+- Port exposé : laisser la valeur par défaut, elle n'est pas utilisée.
+- Une seule instance. Deux instances se disputeraient le bot Telegram (erreur 409 « Conflict »).
+
+## 4. Variables d'environnement
+
+| Variable | Valeur |
+|---|---|
+| `DATABASE_URL` | URL de l'étape 1 |
+| `TELEGRAM_BOT_TOKEN` | token BotFather |
+| `TELEGRAM_CHAT_ID` | **vide** au premier déploiement (voir étape 5) |
+| `EBAY_CLIENT_ID` | clé eBay de production, à reprendre de l'ancien service backend « card-sourcing » sur Coolify |
+| `EBAY_CLIENT_SECRET` | idem |
+
+Variables facultatives (les valeurs par défaut conviennent) : `DEFAULT_MARKETPLACES=EBAY_US`, `DELIVERY_COUNTRY=FR`, `DELIVERY_ZIP=75001`, `HOME_CURRENCY=EUR`, `EBAY_LINK_DOMAIN=www.ebay.fr`, `EBAY_DAILY_BUDGET=4500`, `MIN_INTERVAL_SECONDS=120`, `MAX_ALERTS_PER_SEARCH_CYCLE=10`.
+
+Attention au quota eBay : la limite de 5000 appels par jour est partagée par **tout ce qui utilise ces clés**. Si l'ancien backend tourne encore avec son planificateur, il consomme aussi du quota.
+
+## 5. Premier démarrage
+
+1. Déployer. Les logs doivent afficher `@<nom_du_bot> en écoute`.
+2. Le propriétaire envoie n'importe quel message au bot. Celui-ci répond `Ton chat id est 123456789`.
+3. Renseigner `TELEGRAM_CHAT_ID` avec cette valeur, puis redéployer.
+4. Le bot envoie « 🟢 Alerteur démarré ». À partir de là, il ignore tout autre chat.
+
+## 6. Vérification
+
+- Dans Telegram : `/add wembanyama prizm max=50`. Le bot confirme, puis envoie un résumé des annonces existantes.
+- `/status` affiche le rythme de vérification et le compteur d'appels eBay du jour.
+- En cas d'erreur au démarrage, les logs l'indiquent clairement (`[main] Configuration invalide : …` ou une erreur de connexion à la base).
+
+## Ancienne app
+
+L'ancien frontend (`sourcing.cardvaults.app`) et l'ancien backend tournent sur la branche `main` et ne sont pas concernés. Ne pas les supprimer sans l'accord du propriétaire.
