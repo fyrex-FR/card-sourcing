@@ -49,7 +49,7 @@ async function main(): Promise<void> {
     config,
     sendLoginLink: async (challenge) => {
       if (!config.telegramChatId) throw new Error("TELEGRAM_CHAT_ID n'est pas encore configuré");
-      await bot.api.sendMessage(config.telegramChatId, loginMessage(challenge), { parse_mode: "HTML" });
+      await bot.api.sendMessage(config.telegramChatId, loginMessage(challenge), { parse_mode: "HTML", link_preview_options: { is_disabled: true } });
     },
   });
   const server = serve({ fetch: web.fetch, port: config.port }, (info) =>
