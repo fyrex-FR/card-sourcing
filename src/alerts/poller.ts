@@ -4,14 +4,21 @@ import { utcDay } from "../db/repo.js";
 import type { Search } from "../db/schema.js";
 import { EbayError, EbayRateLimitError } from "../ebay/client.js";
 import type { ListingSource } from "../ebay/client.js";
-import { totalPrice } from "../ebay/listing.js";
+import { isAuction, totalPrice } from "../ebay/listing.js";
 import type { Listing } from "../ebay/listing.js";
 import { marketplaceCurrency } from "../ebay/marketplaces.js";
 import type { Converter } from "../fx.js";
 import type { Notifier } from "./notifier.js";
 import { callsPerCycle, intervalSeconds } from "./pacing.js";
-import { evaluate, watchesEndingAuctions } from "./rules.js";
+import { evaluate, matchesSearch, watchesEndingAuctions } from "./rules.js";
 import type { Evaluation } from "./rules.js";
+
+export type PreviewCriteria = Pick<Search, "query" | "maxPrice" | "buying" | "country" | "excludes" | "marketplaces">;
+
+export interface PreviewItem {
+  listing: Listing;
+  totalHome: number | null;
+}
 
 /** Marge sur le prix max envoyé à eBay : son taux de change diffère un peu du nôtre. */
 const API_PRICE_MARGIN = 1.05;
@@ -61,6 +68,33 @@ export class Poller {
     };
   }
 
+  /** Annonces actuellement en ligne qui correspondent à ces critères (sans rien enregistrer). */
+  async preview(criteria: PreviewCriteria, limitPerMarketplace = 50): Promise<PreviewItem[]> {
+    const { source, fx, config, repo } = this.deps;
+    await fx.refresh();
+    const blocked = await repo.blockedSellers();
+    const byKey = new Map<string, PreviewItem>();
+    for (const marketplace of criteria.marketplaces) {
+      const currency = marketplaceCurrency(marketplace);
+      const filters = source.buildFilters({
+        buying: criteria.buying,
+        maxPrice: this.apiMaxPrice(criteria.maxPrice, currency),
+        currency,
+        country: criteria.country,
+      });
+      await repo.countApiCalls(this.now());
+      const sort = criteria.maxPrice === null ? "newlyListed" : "price";
+      for (const listing of await source.search(criteria.query, { marketplace, filters, sort, limit: limitPerMarketplace })) {
+        const totalHome = fx.convert(totalPrice(listing), listing.currency, config.homeCurrency);
+        if (!byKey.has(listing.itemKey) && matchesSearch(listing, criteria, totalHome, blocked)) {
+          byKey.set(listing.itemKey, { listing, totalHome });
+        }
+      }
+    }
+    const items = [...byKey.values()];
+    return criteria.maxPrice === null ? items : items.sort((a, b) => (a.totalHome ?? Infinity) - (b.totalHome ?? Infinity));
+  }
+
   /** Passage complet sur une recherche. Renvoie le nombre d'alertes envoyées. */
   checkSearch(search: Search): Promise<number> {
     return this.exclusive(() => this.check(search));
@@ -107,6 +141,12 @@ export class Poller {
   }
 
   // --- interne -------------------------------------------------------------
+
+  private apiMaxPrice(maxPrice: number | null, currency: string): number | null {
+    if (maxPrice === null) return null;
+    const converted = this.deps.fx.convert(maxPrice, this.deps.config.homeCurrency, currency);
+    return converted === null ? null : converted * API_PRICE_MARGIN;
+  }
 
   private interval(active: Search[]): number {
     return intervalSeconds(active, {
@@ -159,7 +199,7 @@ export class Poller {
     }
     await repo.updateSearch(search.id, { lastError: null, lastRunAt: this.now(), seeded: true });
     if (seed) {
-      await repo.markAlerted(evaluation.seeded.map((alert) => alert.listing.itemKey), "new", this.now());
+      await repo.markSeen(evaluation.seeded.map((alert) => alert.listing.itemKey), this.now());
       await notifier.seedDigest(search, evaluation.seeded);
     }
     return this.deliver(search, evaluation);
@@ -173,9 +213,7 @@ export class Poller {
 
     for (const marketplace of search.marketplaces) {
       const currency = marketplaceCurrency(marketplace);
-      const converted = search.maxPrice === null ? null : fx.convert(search.maxPrice, config.homeCurrency, currency);
-      const maxPrice = converted === null ? null : converted * API_PRICE_MARGIN;
-      const base = { maxPrice, currency, country: search.country };
+      const base = { maxPrice: this.apiMaxPrice(search.maxPrice, currency), currency, country: search.country };
 
       newly.push(...(await this.query(search, marketplace, source.buildFilters({ ...base, buying: search.buying }), "newlyListed", 200)));
       if (watchesEndingAuctions(search)) {
@@ -203,6 +241,9 @@ export class Poller {
         title: listing.title,
         url: listing.url,
         seller: listing.seller,
+        imageUrl: listing.imageUrl,
+        isAuction: isAuction(listing),
+        endAt: listing.endAt,
         lastTotal: totalHome,
       })),
     );
@@ -232,14 +273,14 @@ export class Poller {
         logError(error);
         continue;
       }
-      await repo.markAlerted([alert.listing.itemKey], alert.kind === "ending" ? "ending" : "new", this.now());
+      await repo.markAlerted([alert.listing.itemKey], alert.kind, this.now());
       sent += 1;
     }
     const overflow = alerts.slice(cap);
     if (overflow.length > 0) {
-      for (const kind of ["new", "ending"] as const) {
-        const keys = overflow.filter((a) => (a.kind === "ending") === (kind === "ending")).map((a) => a.listing.itemKey);
-        await repo.markAlerted(keys, kind, this.now());
+      // Non envoyées sur Telegram, mais visibles dans l'historique web.
+      for (const kind of ["new", "under", "ending"] as const) {
+        await repo.markAlerted(overflow.filter((a) => a.kind === kind).map((a) => a.listing.itemKey), kind, this.now());
       }
       await notifier.overflow(search, overflow.length);
     }

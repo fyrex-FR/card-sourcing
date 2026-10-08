@@ -1,6 +1,11 @@
 # Card Sourcing — alerteur eBay
 
-Bot Telegram privé qui surveille eBay en continu et t'écrit quand une carte correspondant à tes recherches apparaît.
+Surveille eBay en continu et te prévient sur Telegram quand une carte correspondant à tes recherches apparaît.
+
+- **Interface web** : créer et régler les recherches (avec aperçu des annonces en ligne), voir l'historique des alertes, gérer les vendeurs bloqués et le quota.
+- **Telegram** : les alertes, avec les boutons Ignorer et Bloquer le vendeur. Toutes les actions sont aussi possibles en commandes.
+
+Connexion à l'interface sans mot de passe : un lien et un code à usage unique sont envoyés sur ton Telegram.
 
 ## Alertes
 
@@ -12,9 +17,10 @@ Les prix sont comparés **port inclus** et convertis en EUR (taux BCE). Le port 
 
 Chaque alerte propose deux boutons : 🙈 Ignorer (plus d'alerte pour cette carte) et 🚫 Bloquer le vendeur. Quand tu crées une recherche, les annonces déjà en ligne sont enregistrées sans alerte : tu reçois un résumé des moins chères, puis seulement les nouveautés.
 
-## Commandes Telegram
+## Commandes Telegram (facultatives, tout se fait aussi sur le web)
 
 ```
+/login         lien de connexion à l'interface web
 /add wembanyama prizm silver max=80 type=auction pays=CN fin=30 sites=US,GB -reprint -lot
 /list          liste des recherches, /s3 pour gérer la n°3 (boutons)
 /status        rythme de vérification et quota eBay du jour
@@ -29,7 +35,9 @@ La Browse API autorise 5000 appels par jour. Chaque recherche coûte 1 appel par
 ## Stack
 
 Node 22+ et TypeScript, avec :
-- [grammY](https://grammy.dev) pour le bot Telegram (long polling, donc pas d'URL publique) ;
+- [Hono](https://hono.dev) pour l'API et le service de l'interface ;
+- React, Vite et TanStack Query pour l'interface web (`web/`) ;
+- [grammY](https://grammy.dev) pour le bot Telegram (long polling) ;
 - Postgres et [Drizzle](https://orm.drizzle.team) pour la base (migrations appliquées au démarrage) ;
 - Zod pour la validation ;
 - Vitest pour les tests (Postgres en mémoire via PGlite).
@@ -43,7 +51,9 @@ src/
   alerts/pacing.ts     calcul du rythme
   ebay/                client Browse API et parsing des annonces
   bot/                 commandes, boutons, textes, envoi Telegram
+  web/                 API HTTP, connexion, validation
   db/                  schéma Drizzle, connexion, requêtes
+web/                   interface React (servie par le même process)
 drizzle/               migrations SQL générées
 ```
 
@@ -52,7 +62,8 @@ drizzle/               migrations SQL générées
 ```bash
 cp .env.example .env    # puis remplis-le
 npm install
-npm run dev             # lance le bot en rechargement auto
+npm run dev             # serveur + bot (port 3000), rechargement auto
+npm run dev:web         # interface sur http://localhost:5173 (API proxifiée vers :3000)
 npm test
 npm run typecheck
 ```
@@ -61,4 +72,4 @@ Après une modification de `src/db/schema.ts`, lance `npm run db:generate` pour 
 
 ## Déploiement
 
-Sur Coolify avec Nixpacks, sans Dockerfile. Voir [SETUP_COOLIFY.md](SETUP_COOLIFY.md).
+Sur Coolify avec Nixpacks, sans Dockerfile : un seul service, port 3000, health check `/api/health`. Voir [SETUP_COOLIFY.md](SETUP_COOLIFY.md).

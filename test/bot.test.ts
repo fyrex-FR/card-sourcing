@@ -19,6 +19,7 @@ async function makeBot(chatId = String(CHAT)) {
     repo: deps.repo,
     poller: deps.poller,
     config: { telegramChatId: chatId, homeCurrency: "EUR", defaultMarketplaces: ["EBAY_US"], ebayDailyBudget: 4500 },
+    createLoginLink: () => ({ url: "https://alertes.test/auth/callback?token=abc", code: "123456" }),
   });
   let updateId = 0;
   const send = async (text: string, chat = CHAT) => {

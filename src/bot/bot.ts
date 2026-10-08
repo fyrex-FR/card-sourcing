@@ -5,7 +5,7 @@ import type { Repo, SearchPatch } from "../db/repo.js";
 import { BUYING_OPTIONS } from "../db/schema.js";
 import type { Buying, Search } from "../db/schema.js";
 import { EbayRateLimitError } from "../ebay/client.js";
-import { BUYING_LABEL, escapeHtml, helpText, searchLabel, searchListLine, searchSummary } from "./format.js";
+import { BUYING_LABEL, escapeHtml, helpText, loginMessage, searchLabel, searchListLine, searchSummary } from "./format.js";
 import {
   blockedSellersKeyboard,
   confirmDeleteKeyboard,
@@ -15,6 +15,7 @@ import {
 import { ParseError, parseAdd, parseCountry, parseExcludes, parseMarketplaces, parsePrice, parseWindow } from "./parse.js";
 
 export const COMMANDS = [
+  { command: "login", description: "Lien de connexion à l'interface web" },
   { command: "add", description: "Nouvelle recherche : /add wemby prizm silver max=80" },
   { command: "list", description: "Mes recherches" },
   { command: "status", description: "État du bot et quota eBay" },
@@ -58,12 +59,14 @@ function parseEdit(field: EditableField, text: string): SearchPatch {
 export interface BotDeps {
   repo: Repo;
   poller: Poller;
+  /** Crée un lien et un code de connexion web à usage unique. */
+  createLoginLink: () => { url: string; code: string };
   config: Pick<Config, "telegramChatId" | "homeCurrency" | "defaultMarketplaces" | "ebayDailyBudget">;
 }
 
 /** Branche les commandes et boutons sur le bot. */
 export function setupBot(bot: Bot, deps: BotDeps) {
-  const { repo, poller, config } = deps;
+  const { repo, poller, config, createLoginLink } = deps;
   const background = new Set<Promise<void>>();
   // Un seul utilisateur : la saisie en attente tient dans une variable.
   let pending: { searchId: number; field: EditableField } | null = null;
@@ -113,6 +116,8 @@ export function setupBot(bot: Bot, deps: BotDeps) {
   // --- commandes ---------------------------------------------------------------
 
   bot.command(["start", "help"], (ctx) => html(ctx, helpText(config.homeCurrency, config.defaultMarketplaces)));
+
+  bot.command("login", (ctx) => html(ctx, loginMessage(createLoginLink())));
 
   bot.command("add", async (ctx) => {
     if (!ctx.match.trim()) {

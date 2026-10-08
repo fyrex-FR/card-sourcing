@@ -1,9 +1,14 @@
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { apiUsage, appState, blockedSellers, items, searches } from "./schema.js";
-import type { AppState, Item, NewSearch, Search } from "./schema.js";
+import type { AlertKind, AppState, Item, NewSearch, Search } from "./schema.js";
 
 export type SearchPatch = Partial<Omit<NewSearch, "id" | "createdAt">>;
+
+export type ItemUpsert = Pick<Item, "itemKey" | "searchId" | "title" | "url" | "seller" | "lastTotal"> &
+  Partial<Pick<Item, "imageUrl" | "isAuction" | "endAt">>;
+
+export type AlertHistoryEntry = Item & { search: Pick<Search, "id" | "query"> | null };
 
 export function utcDay(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -56,23 +61,49 @@ export class Repo {
     return new Map(rows.map((row) => [row.itemKey, row]));
   }
 
-  async upsertItems(
-    rows: { itemKey: string; searchId: number; title: string; url: string; seller: string; lastTotal: number | null }[],
-  ): Promise<void> {
+  async upsertItems(rows: ItemUpsert[]): Promise<void> {
     if (rows.length === 0) return;
     await this.db
       .insert(items)
       .values(rows)
       .onConflictDoUpdate({
         target: items.itemKey,
-        set: { title: sql`excluded.title`, lastTotal: sql`excluded.last_total` },
+        set: {
+          title: sql`excluded.title`,
+          imageUrl: sql`excluded.image_url`,
+          endAt: sql`excluded.end_at`,
+          lastTotal: sql`excluded.last_total`,
+        },
       });
   }
 
-  async markAlerted(itemKeys: string[], kind: "new" | "ending", at: Date): Promise<void> {
+  /** Annonce signalée : n'alertera plus pour ce motif. */
+  async markAlerted(itemKeys: string[], kind: AlertKind, at: Date): Promise<void> {
     if (itemKeys.length === 0) return;
-    const set = kind === "ending" ? { alertedNewAt: at, alertedEndingAt: at } : { alertedNewAt: at };
-    await this.db.update(items).set(set).where(inArray(items.itemKey, itemKeys));
+    await this.db
+      .update(items)
+      .set({ alertedNewAt: at, lastAlertKind: kind, lastAlertedAt: at, ...(kind === "ending" ? { alertedEndingAt: at } : {}) })
+      .where(inArray(items.itemKey, itemKeys));
+  }
+
+  /** Annonce existante au premier passage : vue, sans alerte. */
+  async markSeen(itemKeys: string[], at: Date): Promise<void> {
+    if (itemKeys.length === 0) return;
+    await this.db.update(items).set({ alertedNewAt: at }).where(inArray(items.itemKey, itemKeys));
+  }
+
+  async alertHistory(limit: number): Promise<AlertHistoryEntry[]> {
+    const rows = await this.db
+      .select({ item: items, searchId: searches.id, searchQuery: searches.query })
+      .from(items)
+      .leftJoin(searches, eq(items.searchId, searches.id))
+      .where(isNotNull(items.lastAlertedAt))
+      .orderBy(desc(items.lastAlertedAt))
+      .limit(limit);
+    return rows.map(({ item, searchId, searchQuery }) => ({
+      ...item,
+      search: searchId === null || searchQuery === null ? null : { id: searchId, query: searchQuery },
+    }));
   }
 
   async muteItem(itemKey: string): Promise<void> {

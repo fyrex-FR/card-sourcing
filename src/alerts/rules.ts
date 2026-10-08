@@ -1,7 +1,7 @@
-import type { Item, Search } from "../db/schema.js";
+import type { AlertKind, Item, Search } from "../db/schema.js";
 import type { Listing } from "../ebay/listing.js";
 
-export type AlertKind = "new" | "under" | "ending";
+export type { AlertKind };
 
 export interface Alert {
   kind: AlertKind;
@@ -31,6 +31,16 @@ export function containsWord(title: string, word: string): boolean {
   return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "iu").test(title);
 }
 
+export type SearchCriteria = Pick<Search, "maxPrice" | "excludes">;
+
+/** Filtres communs : vendeur bloqué, mots exclus, prix max port inclus. */
+export function matchesSearch(listing: Listing, criteria: SearchCriteria, totalHome: number | null, blockedSellers: Set<string>): boolean {
+  if (listing.seller && blockedSellers.has(listing.seller.toLowerCase())) return false;
+  if (criteria.excludes.some((word) => containsWord(listing.title, word))) return false;
+  if (criteria.maxPrice !== null && (totalHome === null || totalHome > criteria.maxPrice)) return false;
+  return true;
+}
+
 export function evaluate(input: {
   search: Search;
   newly: Listing[];
@@ -47,12 +57,7 @@ export function evaluate(input: {
   const matched: Alert[] = [];
   const handled = new Set<string>();
 
-  const passes = (listing: Listing, totalHome: number | null) => {
-    if (listing.seller && input.blockedSellers.has(listing.seller.toLowerCase())) return false;
-    if (search.excludes.some((word) => containsWord(listing.title, word))) return false;
-    if (search.maxPrice !== null && (totalHome === null || totalHome > search.maxPrice)) return false;
-    return true;
-  };
+  const passes = (listing: Listing, totalHome: number | null) => matchesSearch(listing, search, totalHome, input.blockedSellers);
 
   for (const listing of input.ending) {
     if (handled.has(listing.itemKey) || !listing.endAt || listing.endAt <= now) continue;

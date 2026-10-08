@@ -113,8 +113,19 @@ export function seedDigest(search: Search, existing: Alert[], homeCurrency: stri
   return lines.join("\n");
 }
 
+export function loginMessage({ url, code }: { url: string; code: string }): string {
+  return [
+    `🔐 <a href="${escapeHtml(url)}">Se connecter à l'interface web</a>`,
+    `ou tape ce code sur la page de connexion : <code>${code}</code>`,
+    "",
+    "Valable 10 min, une seule fois. Si tu n'as rien demandé, ignore ce message.",
+  ].join("\n");
+}
+
 export function helpText(homeCurrency: string, defaultMarketplaces: string[]): string {
   return `<b>Alerteur eBay</b> — je surveille eBay et je t'écris quand une carte qui t'intéresse apparaît.
+
+💻 Tout se règle aussi depuis l'interface web : /login pour recevoir un lien de connexion.
 
 <b>Créer une recherche</b>
 <code>/add wembanyama prizm silver max=80 type=auction -reprint -lot</code>

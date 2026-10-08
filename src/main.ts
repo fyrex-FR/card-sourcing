@@ -1,14 +1,18 @@
 import { existsSync } from "node:fs";
+import { serve } from "@hono/node-server";
 import { autoRetry } from "@grammyjs/auto-retry";
 import { Bot } from "grammy";
 import { Poller } from "./alerts/poller.js";
 import { COMMANDS, setupBot } from "./bot/bot.js";
+import { loginMessage } from "./bot/format.js";
 import { TelegramNotifier } from "./bot/notifier.js";
 import { loadConfig } from "./config.js";
 import { connectDatabase } from "./db/client.js";
 import { Repo } from "./db/repo.js";
 import { EbayClient } from "./ebay/client.js";
 import { Fx } from "./fx.js";
+import { LoginLinks } from "./web/auth.js";
+import { createWebApp } from "./web/server.js";
 
 async function main(): Promise<void> {
   if (existsSync(".env")) process.loadEnvFile(".env");
@@ -33,12 +37,29 @@ async function main(): Promise<void> {
     notifier: new TelegramNotifier(bot.api, config.telegramChatId, config.homeCurrency),
     config,
   });
-  const { settled } = setupBot(bot, { repo, poller, config });
+
+  const links = new LoginLinks(config.publicUrl);
+  const { settled } = setupBot(bot, { repo, poller, config, createLoginLink: () => links.create() });
   await bot.api.setMyCommands(COMMANDS);
+
+  const web = createWebApp({
+    repo,
+    poller,
+    links,
+    config,
+    sendLoginLink: async (challenge) => {
+      if (!config.telegramChatId) throw new Error("TELEGRAM_CHAT_ID n'est pas encore configuré");
+      await bot.api.sendMessage(config.telegramChatId, loginMessage(challenge), { parse_mode: "HTML" });
+    },
+  });
+  const server = serve({ fetch: web.fetch, port: config.port }, (info) =>
+    console.log(`[web] interface sur ${config.publicUrl} (port ${info.port})`),
+  );
 
   const shutdown = async () => {
     console.log("[main] arrêt…");
     poller.stop();
+    server.close();
     await bot.stop();
     await settled();
     await close();
@@ -47,7 +68,7 @@ async function main(): Promise<void> {
   process.once("SIGTERM", shutdown);
 
   if (config.telegramChatId) {
-    await bot.api.sendMessage(config.telegramChatId, "🟢 Alerteur démarré. /list pour tes recherches, /help pour l'aide.");
+    await bot.api.sendMessage(config.telegramChatId, "🟢 Alerteur démarré. /login pour l'interface web, /help pour l'aide.");
     void poller.start();
   } else {
     console.log("[main] TELEGRAM_CHAT_ID vide : envoie un message au bot, il te répondra ton chat id.");

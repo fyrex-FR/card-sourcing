@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 const list = (fallback: string) =>
@@ -27,6 +28,11 @@ const EnvSchema = z.object({
   MIN_INTERVAL_SECONDS: z.coerce.number().int().positive().default(120),
   /** Au-delà, on résume au lieu d'envoyer une alerte par carte. */
   MAX_ALERTS_PER_SEARCH_CYCLE: z.coerce.number().int().positive().default(10),
+  PORT: z.coerce.number().int().positive().default(3000),
+  /** Adresse publique de l'interface web, utilisée dans les liens de connexion envoyés sur Telegram. */
+  PUBLIC_URL: z.string().trim().default(""),
+  /** Clé de signature des sessions web. Par défaut, dérivée du token Telegram. */
+  SESSION_SECRET: z.string().trim().default(""),
 });
 
 export interface Config {
@@ -43,6 +49,9 @@ export interface Config {
   ebayDailyBudget: number;
   minIntervalSeconds: number;
   maxAlertsPerSearchCycle: number;
+  port: number;
+  publicUrl: string;
+  sessionSecret: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -66,5 +75,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ebayDailyBudget: e.EBAY_DAILY_BUDGET,
     minIntervalSeconds: e.MIN_INTERVAL_SECONDS,
     maxAlertsPerSearchCycle: e.MAX_ALERTS_PER_SEARCH_CYCLE,
+    port: e.PORT,
+    publicUrl: (e.PUBLIC_URL || `http://localhost:${e.PORT}`).replace(/\/+$/, ""),
+    sessionSecret: e.SESSION_SECRET || createHash("sha256").update(`session:${e.TELEGRAM_BOT_TOKEN}`).digest("hex"),
   };
 }

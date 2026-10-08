@@ -3,6 +3,7 @@ import { boolean, check, doublePrecision, integer, pgTable, serial, text, timest
 
 export const BUYING_OPTIONS = ["ALL", "AUCTION", "FIXED_PRICE"] as const;
 export type Buying = (typeof BUYING_OPTIONS)[number];
+export type AlertKind = "new" | "under" | "ending";
 
 export const searches = pgTable("searches", {
   id: serial("id").primaryKey(),
@@ -30,10 +31,17 @@ export const items = pgTable("items", {
   title: text("title").notNull(),
   url: text("url").notNull(),
   seller: text("seller").notNull().default(""),
+  imageUrl: text("image_url").notNull().default(""),
+  isAuction: boolean("is_auction").notNull().default(false),
+  endAt: timestamp("end_at", { withTimezone: true }),
+  /** Dernier prix total vu (port inclus), en devise locale. */
   lastTotal: doublePrecision("last_total"),
   firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
   alertedNewAt: timestamp("alerted_new_at", { withTimezone: true }),
   alertedEndingAt: timestamp("alerted_ending_at", { withTimezone: true }),
+  /** Dernière alerte émise (envoyée sur Telegram ou résumée), pour l'historique web. */
+  lastAlertKind: text("last_alert_kind").$type<AlertKind>(),
+  lastAlertedAt: timestamp("last_alerted_at", { withTimezone: true }),
   muted: boolean("muted").notNull().default(false),
 });
 
