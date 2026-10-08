@@ -6,7 +6,7 @@ import { EbayError, EbayRateLimitError } from "../ebay/client.js";
 import type { ListingSource } from "../ebay/client.js";
 import { isAuction } from "../ebay/listing.js";
 import type { Listing } from "../ebay/listing.js";
-import { marketplaceCurrency } from "../ebay/marketplaces.js";
+import { isVinted, marketplaceCurrency } from "../ebay/marketplaces.js";
 import type { Converter } from "../fx.js";
 import type { Notifier } from "./notifier.js";
 import { callsPerCycle, intervalSeconds } from "./pacing.js";
@@ -62,7 +62,7 @@ export class Poller {
   }
 
   async status(): Promise<{ active: Search[]; callsPerCycle: number; intervalSeconds: number; callsToday: number }> {
-    const active = await this.deps.repo.listSearches({ activeOnly: true });
+    const active = await this.deps.repo.listSearches({ activeOnly: true, source: "ebay" });
     return {
       active,
       callsPerCycle: callsPerCycle(active),
@@ -78,6 +78,7 @@ export class Poller {
     const blocked = await repo.blockedSellers();
     const settings = await repo.getState();
     const byKey = new Map<string, PreviewItem>();
+    if (isVinted(criteria)) return [];
     for (const marketplace of criteria.marketplaces) {
       const currency = marketplaceCurrency(marketplace);
       const filters = source.buildFilters({
@@ -106,7 +107,7 @@ export class Poller {
 
   async runCycle(): Promise<number> {
     let sent = 0;
-    for (const { id } of await this.deps.repo.listSearches({ activeOnly: true })) {
+    for (const { id } of await this.deps.repo.listSearches({ activeOnly: true, source: "ebay" })) {
       // Relue juste avant : elle a pu être modifiée ou supprimée pendant le passage.
       const search = await this.deps.repo.getSearch(id);
       if (search?.active) sent += await this.checkSearch(search);
@@ -120,7 +121,7 @@ export class Poller {
     while (!this.stopped) {
       try {
         const state = await repo.getState();
-        const active = await repo.listSearches({ activeOnly: true });
+        const active = await repo.listSearches({ activeOnly: true, source: "ebay" });
         if (state.paused || active.length === 0) {
           await this.sleep(IDLE_MS);
           continue;
@@ -198,6 +199,7 @@ export class Poller {
   }
 
   private async check(search: Search): Promise<number> {
+    if (isVinted(search)) return 0;
     const { repo, fx, notifier } = this.deps;
     await fx.refresh();
     const seed = !search.seeded;

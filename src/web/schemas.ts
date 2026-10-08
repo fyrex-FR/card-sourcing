@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { BUYING_OPTIONS, GRADING_OPTIONS, TRACK_STATUSES } from "../db/schema.js";
-import { MARKETPLACES } from "../ebay/marketplaces.js";
+import { MARKETPLACES, VINTED } from "../ebay/marketplaces.js";
 
 const word = z.string().trim().toLowerCase().min(1).max(40);
 
@@ -23,9 +23,10 @@ const fields = {
   minSellerFeedbackScore: z.number().int().min(0).nullable(),
   endingWindowMin: z.number().int().min(5).max(1440),
   marketplaces: z
-    .array(z.string().refine((m) => MARKETPLACES.includes(m), "Site eBay inconnu"))
-    .min(1, "Au moins un site eBay")
-    .transform((list) => [...new Set(list)]),
+    .array(z.string().refine((m) => m === VINTED || MARKETPLACES.includes(m), "Site inconnu"))
+    .min(1, "Au moins un site")
+    .transform((list) => [...new Set(list)])
+    .refine((list) => !list.includes(VINTED) || list.length === 1, "Vinted ne se combine pas avec eBay"),
 };
 
 export const SearchInputSchema = z.object({
@@ -64,3 +65,19 @@ export const SettingsSchema = z
     reminderMinutes: z.number().int().min(1).max(240),
   })
   .partial();
+
+export const VintedPushSchema = z.object({
+  searchId: z.number().int(),
+  items: z
+    .array(
+      z.object({
+        externalId: z.string().min(1).max(40),
+        title: z.string().min(1).max(300),
+        price: z.number().min(0),
+        url: z.string().min(1).max(500),
+        imageUrl: z.string().max(500).nullish(),
+        condition: z.string().max(100).nullish(),
+      }),
+    )
+    .max(200),
+});

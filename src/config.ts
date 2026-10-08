@@ -33,6 +33,8 @@ const EnvSchema = z.object({
   PUBLIC_URL: z.string().trim().default(""),
   /** Clé de signature des sessions web. Par défaut, dérivée du token Telegram. */
   SESSION_SECRET: z.string().trim().default(""),
+  /** Jeton de l'agent OpenClaw pour /api/vinted. Vide : routes désactivées (401). */
+  VINTED_AGENT_TOKEN: z.string().trim().default(""),
 });
 
 export interface Config {
@@ -52,6 +54,7 @@ export interface Config {
   port: number;
   publicUrl: string;
   sessionSecret: string;
+  vintedAgentToken: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -77,6 +80,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxAlertsPerSearchCycle: e.MAX_ALERTS_PER_SEARCH_CYCLE,
     port: e.PORT,
     publicUrl: (e.PUBLIC_URL || `http://localhost:${e.PORT}`).replace(/\/+$/, ""),
+    vintedAgentToken: e.VINTED_AGENT_TOKEN,
     sessionSecret: e.SESSION_SECRET || createHash("sha256").update(`session:${e.TELEGRAM_BOT_TOKEN}`).digest("hex"),
   };
 }

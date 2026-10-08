@@ -39,11 +39,18 @@ export class Repo {
     return row;
   }
 
-  async listSearches(options: { activeOnly?: boolean } = {}): Promise<Search[]> {
+  /** `source` : "ebay" exclut les recherches Vinted, "vinted" ne garde qu'elles. */
+  async listSearches(options: { activeOnly?: boolean; source?: "ebay" | "vinted" } = {}): Promise<Search[]> {
+    const isVinted = sql`'VINTED' = ANY(${searches.marketplaces})`;
     return this.db
       .select()
       .from(searches)
-      .where(options.activeOnly ? eq(searches.active, true) : undefined)
+      .where(
+        and(
+          options.activeOnly ? eq(searches.active, true) : undefined,
+          options.source === "ebay" ? sql`NOT (${isVinted})` : options.source === "vinted" ? isVinted : undefined,
+        ),
+      )
       .orderBy(asc(searches.id));
   }
 

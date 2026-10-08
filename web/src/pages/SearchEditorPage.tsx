@@ -146,6 +146,7 @@ export function SearchEditorPage() {
     setForm({ ...form, [key]: value });
     preview.reset();
   };
+  const vinted = form.marketplaces.includes("VINTED");
   const watchesEnding = input.buying !== "FIXED_PRICE" && input.maxPrice !== null;
   const calls = (watchesEnding ? 2 : 1) * input.marketplaces.length;
   const valid = input.query.length > 0 && input.marketplaces.length > 0;
@@ -174,6 +175,20 @@ export function SearchEditorPage() {
 
       <form className="editor" onSubmit={submit}>
         <section className="panel">
+          <div className="field">
+            <span>Source</span>
+            <Segmented
+              label="Source"
+              value={vinted ? "VINTED" : "EBAY"}
+              onChange={(value) => set("marketplaces", value === "VINTED" ? ["VINTED"] : status.data.defaultMarketplaces)}
+              options={[
+                { value: "EBAY", label: "eBay" },
+                { value: "VINTED", label: "Vinted" },
+              ]}
+            />
+            {vinted && <small>Vinted est surveillé toutes les 15 min par l'agent OpenClaw, qui t'envoie les nouvelles annonces sur Telegram.</small>}
+          </div>
+
           <label className="field">
             <span>Mots-clés</span>
             <input
@@ -187,7 +202,7 @@ export function SearchEditorPage() {
           </label>
 
           <label className="field">
-            <span>Prix max, rendu France</span>
+            <span>{vinted ? "Prix max" : "Prix max, rendu France"}</span>
             <div className="input-suffix">
               <input
                 inputMode="decimal"
@@ -204,6 +219,7 @@ export function SearchEditorPage() {
             </small>
           </label>
 
+          {!vinted && (
           <div className="field">
             <span>Type d'annonce</span>
             <Segmented
@@ -217,8 +233,9 @@ export function SearchEditorPage() {
               ]}
             />
           </div>
+          )}
 
-          {form.buying !== "FIXED_PRICE" && (
+          {!vinted && form.buying !== "FIXED_PRICE" && (
             <label className="field">
               <span>Alerte de fin d'enchère</span>
               <div className="input-suffix">
@@ -240,6 +257,7 @@ export function SearchEditorPage() {
         </section>
 
         <section className="panel">
+          {!vinted && (
           <div className="field">
             <span>Sites eBay interrogés</span>
             <div className="toggle-chips">
@@ -262,7 +280,9 @@ export function SearchEditorPage() {
             </div>
             <small>eBay US suffit en général : les vendeurs du monde entier, notamment chinois, y sont visibles. Chaque site ajouté coûte du quota.</small>
           </div>
+          )}
 
+          {!vinted && (
           <label className="field">
             <span>Pays du vendeur</span>
             <select value={form.country} onChange={(event) => set("country", event.target.value)}>
@@ -274,6 +294,7 @@ export function SearchEditorPage() {
               ))}
             </select>
           </label>
+          )}
 
           <div className="field">
             <span>Mots à exclure</span>
@@ -291,6 +312,7 @@ export function SearchEditorPage() {
             <small>Le titre doit contenir chacun de ces mots.</small>
           </div>
 
+          {!vinted && (<>
           <div className="field">
             <span>État de la carte</span>
             <Segmented
@@ -340,9 +362,11 @@ export function SearchEditorPage() {
             </div>
             <small>Laisse vide pour ne pas filtrer.</small>
           </div>
+          </>)}
         </section>
 
         <div className="editor-actions">
+          {!vinted && (<>
           <p className="muted small">
             ≈ {calls} appel{calls > 1 ? "s" : ""} eBay par vérification
           </p>
@@ -354,6 +378,7 @@ export function SearchEditorPage() {
           >
             {preview.isPending ? "Recherche…" : "Aperçu des annonces"}
           </button>
+          </>)}
           <button className="button primary" disabled={!valid || save.isPending}>
             {searchId === null ? "Créer et surveiller" : "Enregistrer"}
           </button>
@@ -361,9 +386,11 @@ export function SearchEditorPage() {
 
         {existing && (
           <div className="secondary-actions">
+            {!vinted && (
             <button type="button" className="button small" onClick={() => check.mutate()} disabled={check.isPending}>
               {check.isPending ? "Vérification…" : "Vérifier maintenant"}
             </button>
+            )}
             <button type="button" className="button small" onClick={() => toggle.mutate()}>
               {existing.active ? "Mettre en pause" : "Réactiver"}
             </button>

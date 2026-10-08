@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,11 +12,11 @@ import type { Config } from "../config.js";
 import type { Repo, SearchPatch } from "../db/repo.js";
 import type { Search } from "../db/schema.js";
 import { EbayError, EbayRateLimitError } from "../ebay/client.js";
-import { MARKETPLACES } from "../ebay/marketplaces.js";
+import { MARKETPLACES, VINTED, isVinted } from "../ebay/marketplaces.js";
 import { SESSION_TTL_MS } from "./auth.js";
 import type { LoginChallenge, LoginLinks } from "./auth.js";
 import type { SettingsDto, StatusDto } from "./dto.js";
-import { ItemPatchSchema, PreviewSchema, SearchInputSchema, SearchPatchSchema, SettingsSchema } from "./schemas.js";
+import { ItemPatchSchema, PreviewSchema, SearchInputSchema, SearchPatchSchema, SettingsSchema, VintedPushSchema } from "./schemas.js";
 
 /** Interface web compilée (web/dist), à deux niveaux de ce fichier (src/web ou dist/web). */
 export const WEB_DIST = fileURLToPath(new URL("../../web/dist", import.meta.url));
@@ -42,7 +43,7 @@ export interface WebDeps {
   poller: Poller;
   links: LoginLinks;
   sendLoginLink: (challenge: LoginChallenge) => Promise<void>;
-  config: Pick<Config, "sessionSecret" | "publicUrl" | "homeCurrency" | "defaultMarketplaces" | "ebayDailyBudget">;
+  config: Pick<Config, "sessionSecret" | "publicUrl" | "homeCurrency" | "defaultMarketplaces" | "ebayDailyBudget"> & Partial<Pick<Config, "vintedAgentToken">>;
   /** Dossier des fichiers statiques ; null pour ne servir que l'API. */
   staticRoot?: string | null;
 }
@@ -143,6 +144,63 @@ export function createWebApp(deps: WebDeps): Hono {
     if (typeof code !== "string" || !links.consumeCode(code)) throw new HttpError(401, "Code invalide ou expiré");
     await openSession(c);
     return c.json({ ok: true });
+  });
+
+  // --- agent OpenClaw : recherches Vinted (jeton dédié, pas de session) ------------------
+
+  const requireAgent = (c: Context) => {
+    const expected = Buffer.from(config.vintedAgentToken ?? "");
+    const given = Buffer.from(c.req.header("x-agent-token") ?? "");
+    if (expected.length === 0 || expected.length !== given.length || !timingSafeEqual(expected, given)) {
+      throw new HttpError(401, "Jeton agent invalide");
+    }
+  };
+
+  app.get("/api/vinted/searches", async (c) => {
+    requireAgent(c);
+    const rows = await repo.listSearches({ activeOnly: true, source: "vinted" });
+    return c.json(rows.map(({ id, query, maxPrice }) => ({ id, query, maxPrice })));
+  });
+
+  app.post("/api/vinted/items", async (c) => {
+    requireAgent(c);
+    const body = await parseBody(c, VintedPushSchema);
+    const search = await repo.getSearch(body.searchId);
+    if (!search || !isVinted(search)) throw new HttpError(404, "Recherche Vinted introuvable");
+    const now = poller.now();
+    const matching = body.items.filter((item) => {
+      const title = item.title.toLowerCase();
+      return (
+        (search.maxPrice === null || item.price <= search.maxPrice) &&
+        !search.excludes.some((word) => title.includes(word)) &&
+        search.requiredWords.every((word) => title.includes(word))
+      );
+    });
+    const keyOf = (externalId: string) => `vinted:${externalId}`;
+    const known = await repo.getItems(matching.map((item) => keyOf(item.externalId)));
+    const fresh = matching.filter((item) => !known.has(keyOf(item.externalId)));
+    await repo.upsertItems(
+      fresh.map((item) => ({
+        itemKey: keyOf(item.externalId),
+        searchId: search.id,
+        title: item.title,
+        url: item.url,
+        seller: "",
+        marketplace: VINTED,
+        imageUrl: item.imageUrl ?? "",
+        price: item.price,
+        shipping: 0,
+        currency: "EUR",
+        lastTotal: item.price,
+      })),
+    );
+    const keys = fresh.map((item) => keyOf(item.externalId));
+    // Premier passage : le stock existant est enregistré sans alerte.
+    const baseline = !search.seeded;
+    if (baseline) await repo.markSeen(keys, now);
+    else await repo.markAlerted(keys, "new", now);
+    await repo.updateSearch(search.id, { seeded: true, lastRunAt: now, lastError: null });
+    return c.json({ stored: fresh.length, baseline, new: baseline ? [] : fresh });
   });
 
   // --- tout le reste de l'API exige une session ---------------------------------

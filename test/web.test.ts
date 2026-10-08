@@ -12,7 +12,7 @@ async function makeApp() {
     ...deps,
     links,
     sendLoginLink: async (challenge) => void challenges.push(challenge),
-    config: { sessionSecret: "secret", publicUrl: "https://alertes.test", homeCurrency: "EUR", defaultMarketplaces: ["EBAY_US"], ebayDailyBudget: 4500 },
+    config: { sessionSecret: "secret", publicUrl: "https://alertes.test", homeCurrency: "EUR", defaultMarketplaces: ["EBAY_US"], ebayDailyBudget: 4500, vintedAgentToken: "agent-secret" },
     staticRoot: null,
   });
   let cookie = "";
@@ -213,5 +213,48 @@ describe("API recherches", () => {
     expect(created).toMatchObject({ requiredWords: ["auto"], grading: "RAW", excludeLots: true, minSellerFeedbackPct: 98, minSellerFeedbackScore: null });
     const patched = await json("PATCH", `/api/searches/${created.id}`, { grading: "GRADED" });
     expect(patched).toMatchObject({ grading: "GRADED", requiredWords: ["auto"], excludeLots: true });
+  });
+});
+
+describe("recherches Vinted (agent OpenClaw)", () => {
+  const agent = { "X-Agent-Token": "agent-secret", "Content-Type": "application/json" };
+  const item = (id: string, price: number, title = "Panini Prizm Wembanyama") => ({ externalId: id, title, price, url: `https://www.vinted.fr/items/${id}` });
+
+  it("refuse sans jeton ou avec un mauvais jeton", async () => {
+    const { app } = await makeApp();
+    expect((await app.request("/api/vinted/searches")).status).toBe(401);
+    expect((await app.request("/api/vinted/searches", { headers: { "X-Agent-Token": "nope" } })).status).toBe(401);
+  });
+
+  it("premier passage silencieux, puis seulement les nouvelles annonces sous le prix max", async () => {
+    const { app, login, json, source } = await makeApp();
+    await login();
+    const search = await json("POST", "/api/searches", { query: "wembanyama", marketplaces: ["VINTED"], maxPrice: 20, excludes: ["lot"] });
+    expect(source.calls).toHaveLength(0);
+
+    const list = await (await app.request("/api/vinted/searches", { headers: agent })).json();
+    expect(list).toEqual([{ id: search.id, query: "wembanyama", maxPrice: 20 }]);
+
+    const push = async (items: unknown[]) =>
+      (await app.request("/api/vinted/items", { method: "POST", headers: agent, body: JSON.stringify({ searchId: search.id, items }) })).json() as Promise<any>;
+
+    const first = await push([item("1", 5), item("2", 50)]);
+    expect(first).toMatchObject({ stored: 1, baseline: true, new: [] });
+
+    const second = await push([item("1", 5), item("3", 8), item("4", 9, "Lot de 10 cartes"), item("5", 99)]);
+    expect(second.baseline).toBe(false);
+    expect(second.new.map((i: any) => i.externalId)).toEqual(["3"]);
+
+    expect((await push([item("3", 8)])).new).toEqual([]);
+    expect(source.calls).toHaveLength(0);
+  });
+
+  it("refuse Vinted combiné avec eBay et ignore Vinted dans le poller", async () => {
+    const { login, call, poller, source } = await makeApp();
+    await login();
+    expect((await call("POST", "/api/searches", { query: "x", marketplaces: ["VINTED", "EBAY_US"] })).status).toBe(400);
+    await call("POST", "/api/searches", { query: "x", marketplaces: ["VINTED"] });
+    expect(await poller.runCycle()).toBe(0);
+    expect(source.calls).toHaveLength(0);
   });
 });
