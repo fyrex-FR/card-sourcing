@@ -42,11 +42,17 @@ export function ListingCard({ title, url, imageUrl, price, priceDetail, badge, m
   );
 }
 
-export function priceParts(listing: { price: number; shipping: number | null; currency: string }, totalHome: number | null, home: string) {
+export function priceParts(
+  listing: { price: number; shipping: number | null; currency: string },
+  totalHome: number | null,
+  importCost: number | null,
+  home: string,
+) {
   const shipping = listing.shipping === null ? "port inconnu" : `port ${money(listing.shipping, listing.currency)}`;
+  const parts = [money(listing.price, listing.currency), shipping, importCost ? `TVA/import ${money(importCost, home)}` : null];
   return {
     price: money(totalHome ?? listing.price + (listing.shipping ?? 0), totalHome === null ? listing.currency : home),
-    priceDetail: `${money(listing.price, listing.currency)} + ${shipping}`,
+    priceDetail: `${importCost ? "rendu France · " : ""}${parts.filter(Boolean).join(" + ")}`,
   };
 }
 

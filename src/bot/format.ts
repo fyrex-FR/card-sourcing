@@ -1,5 +1,6 @@
 import type { Alert, AlertKind } from "../alerts/rules.js";
 import type { Search } from "../db/schema.js";
+import type { Reminder } from "../alerts/reminders.js";
 import { isAuction, totalPrice } from "../ebay/listing.js";
 
 export const BUYING_LABEL = { ALL: "Tout", AUCTION: "Enchères", FIXED_PRICE: "Achat immédiat" } as const;
@@ -40,14 +41,25 @@ export function timeLeft(endAt: Date | null, now: Date): string {
 
 export const searchLabel = (search: Pick<Search, "id" | "query">) => `#${search.id} ${search.query}`;
 
+/** « 💶 52,80 € rendu France (38 $ + port 6 $ + import 8,80 €) » */
+export function priceLine(
+  listing: { price: number; shipping: number | null; currency: string },
+  totalHome: number | null,
+  importCost: number | null,
+  homeCurrency: string,
+): string {
+  const shipping = listing.shipping === null ? "port inconnu" : `port ${money(listing.shipping, listing.currency)}`;
+  const parts = [money(listing.price, listing.currency), shipping];
+  if (importCost) parts.push(`TVA/import ${money(importCost, homeCurrency)}`);
+  const total = totalHome === null ? money(listing.price + (listing.shipping ?? 0), listing.currency) : money(totalHome, homeCurrency);
+  return `💶 <b>${total}</b>${importCost ? " rendu France" : ""}  <i>(${parts.join(" + ")})</i>`;
+}
+
 export function alertCaption(alert: Alert, search: Search, homeCurrency: string, now: Date): string {
   const { listing, totalHome } = alert;
   const lines = [`${ALERT_HEADER[alert.kind]} · ${escapeHtml(searchLabel(search))}`, "", `<b>${escapeHtml(listing.title.slice(0, 200))}</b>`, ""];
 
-  const shipping = listing.shipping === null ? "port inconnu" : `port ${money(listing.shipping, listing.currency)}`;
-  const detail = `${money(listing.price, listing.currency)} + ${shipping}`;
-  const converted = totalHome !== null && listing.currency !== homeCurrency;
-  lines.push(`💶 <b>${converted ? money(totalHome, homeCurrency) : money(totalPrice(listing), listing.currency)}</b>  <i>(${detail})</i>`);
+  lines.push(priceLine(listing, totalHome, alert.importCost, homeCurrency));
 
   if (isAuction(listing)) {
     const bids = listing.bidCount ?? 0;
@@ -110,6 +122,34 @@ export function seedDigest(search: Search, existing: Alert[], homeCurrency: stri
     "",
     "À partir de maintenant, seules les nouveautés te sont envoyées.",
   ];
+  return lines.join("\n");
+}
+
+export function reminderMessage(reminder: Reminder, homeCurrency: string, now: Date): string {
+  const { item } = reminder;
+  const status = item.status === "bid" ? "🎯 Enchère à jouer" : "⭐ Enchère suivie";
+  const lines = [`⏰ <b>Fin dans ${timeLeft(reminder.endAt, now) || "quelques minutes"}</b> · ${status}`, "", `<b>${escapeHtml(item.title.slice(0, 200))}</b>`, ""];
+  if (reminder.gone) {
+    lines.push("Cette annonce n'est plus disponible sur eBay.");
+    return lines.join("\n");
+  }
+  if (reminder.price !== null) {
+    const bids = reminder.bidCount ?? 0;
+    lines.push(`🔨 Enchère actuelle : <b>${money(reminder.price, reminder.currency)}</b> · ${bids} offre${bids > 1 ? "s" : ""}`);
+  }
+  if (reminder.landed !== null) lines.push(`💶 Coût rendu France à ce prix : <b>${money(reminder.landed, homeCurrency)}</b>`);
+  if (item.maxBid !== null) {
+    lines.push(`🎯 Ton plafond : ${money(item.maxBid, homeCurrency)} rendu France`);
+    if (reminder.maxBidListing !== null) {
+      const over = reminder.price !== null && reminder.price > reminder.maxBidListing;
+      lines.push(
+        over
+          ? `⚠️ Déjà au-dessus : la mise max pour ton plafond serait ${money(reminder.maxBidListing, reminder.currency)}.`
+          : `👉 Mise max à saisir sur eBay : <b>${money(reminder.maxBidListing, reminder.currency)}</b>`,
+      );
+    }
+  }
+  if (item.note) lines.push(`📝 ${escapeHtml(item.note)}`);
   return lines.join("\n");
 }
 

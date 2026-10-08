@@ -14,8 +14,8 @@ import { EbayError, EbayRateLimitError } from "../ebay/client.js";
 import { MARKETPLACES } from "../ebay/marketplaces.js";
 import { SESSION_TTL_MS } from "./auth.js";
 import type { LoginChallenge, LoginLinks } from "./auth.js";
-import type { StatusDto } from "./dto.js";
-import { PreviewSchema, SearchInputSchema, SearchPatchSchema } from "./schemas.js";
+import type { SettingsDto, StatusDto } from "./dto.js";
+import { ItemPatchSchema, PreviewSchema, SearchInputSchema, SearchPatchSchema, SettingsSchema } from "./schemas.js";
 
 /** Interface web compilée (web/dist), à deux niveaux de ce fichier (src/web ou dist/web). */
 export const WEB_DIST = fileURLToPath(new URL("../../web/dist", import.meta.url));
@@ -23,7 +23,19 @@ export const WEB_DIST = fileURLToPath(new URL("../../web/dist", import.meta.url)
 const SESSION_COOKIE = "session";
 const LINK_REQUEST_COOLDOWN_MS = 30_000;
 /** Ces champs changent les résultats : le stock existant est ré-enregistré en silence. */
-const RESEED_FIELDS = ["query", "maxPrice", "buying", "country", "excludes", "marketplaces"] as const;
+const RESEED_FIELDS = [
+  "query",
+  "maxPrice",
+  "buying",
+  "country",
+  "excludes",
+  "marketplaces",
+  "requiredWords",
+  "grading",
+  "excludeLots",
+  "minSellerFeedbackPct",
+  "minSellerFeedbackScore",
+] as const;
 
 export interface WebDeps {
   repo: Repo;
@@ -57,6 +69,17 @@ function parseId(c: Context): number {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) throw new HttpError(404, "Recherche introuvable");
   return id;
+}
+
+function confirmLoginPage(token: string): string {
+  const safe = token.replace(/[^A-Za-z0-9_-]/g, "");
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Connexion</title><style>
+:root{color-scheme:light dark;font:16px system-ui,sans-serif}body{margin:0;min-height:100dvh;display:grid;place-items:center;background:Canvas;color:CanvasText;padding:16px}
+form{max-width:340px;width:100%;text-align:center;display:grid;gap:14px}button{font:inherit;font-weight:600;padding:14px;border:0;border-radius:12px;background:#3557e0;color:#fff;cursor:pointer}
+p{opacity:.75;margin:0}</style></head><body>
+<form method="post" action="/auth/callback"><h1>Alerteur eBay</h1><p>Connecte ce navigateur à l'interface.</p>
+<input type="hidden" name="token" value="${safe}"><button type="submit">Se connecter</button></form></body></html>`;
 }
 
 export function createWebApp(deps: WebDeps): Hono {
@@ -105,8 +128,12 @@ export function createWebApp(deps: WebDeps): Hono {
       maxAge: SESSION_TTL_MS / 1000,
     });
 
-  app.get("/auth/callback", async (c) => {
-    if (!links.consumeToken(c.req.query("token") ?? "")) return c.redirect("/?login=expired");
+  // Le lien n'est consommé qu'au clic sur le bouton (POST) : un aperçu ou un robot qui charge l'URL ne le grille pas.
+  app.get("/auth/callback", (c) => c.html(confirmLoginPage(c.req.query("token") ?? "")));
+
+  app.post("/auth/callback", async (c) => {
+    const form = await c.req.parseBody();
+    if (!links.consumeToken(typeof form.token === "string" ? form.token : "")) return c.redirect("/?login=expired");
     await openSession(c);
     return c.redirect("/");
   });
@@ -207,6 +234,30 @@ export function createWebApp(deps: WebDeps): Hono {
   app.post("/api/items/:key/mute", async (c) => {
     await repo.muteItem(c.req.param("key"));
     return c.json({ ok: true });
+  });
+
+  app.patch("/api/items/:key", async (c) => {
+    const patch = await parseBody(c, ItemPatchSchema);
+    const item = await repo.updateItem(c.req.param("key"), patch, poller.now());
+    if (!item) throw new HttpError(404, "Annonce inconnue");
+    return c.json(item);
+  });
+
+  app.get("/api/tracked", async (c) => {
+    const [tracked, settings] = await Promise.all([repo.trackedItems(), repo.getState()]);
+    const body = tracked.map((item) => ({ ...item, maxBidListing: poller.bidAdvice(item, settings) }));
+    return c.json(body);
+  });
+
+  app.get("/api/settings", async (c) => {
+    const { importVatRate, customsFee, reminderMinutes } = await repo.getState();
+    return c.json({ importVatRate, customsFee, reminderMinutes } satisfies SettingsDto);
+  });
+
+  app.put("/api/settings", async (c) => {
+    await repo.setState(await parseBody(c, SettingsSchema));
+    const { importVatRate, customsFee, reminderMinutes } = await repo.getState();
+    return c.json({ importVatRate, customsFee, reminderMinutes } satisfies SettingsDto);
   });
 
   app.get("/api/blocked-sellers", async (c) => c.json([...(await repo.blockedSellers())]));

@@ -1,4 +1,9 @@
 export const BUYING_LABEL = { ALL: "Tout", AUCTION: "Enchères", FIXED_PRICE: "Achat immédiat" } as const;
+export const GRADING_LABEL = { ANY: "Gradées ou non", GRADED: "Gradées", RAW: "Non gradées" } as const;
+export const STATUS_LABEL = { watch: "⭐ Suivie", bid: "🎯 À enchérir", bought: "✅ Achetée" } as const;
+
+/** Lien vers les annonces d'un vendeur sur eBay. */
+export const sellerStoreUrl = (seller: string) => `https://www.ebay.fr/sch/i.html?_ssn=${encodeURIComponent(seller)}`;
 
 export const MARKETPLACE_LABEL: Record<string, string> = {
   EBAY_US: "🇺🇸 États-Unis",

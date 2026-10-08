@@ -91,4 +91,23 @@ describe("Poller (avec Postgres)", () => {
     expect((await repo.getSearch(active.id))?.seeded).toBe(true);
     expect((await repo.getState()).lastCycleAt).toEqual(NOW);
   });
+
+  it("compare le prix max au coût rendu France (TVA d'import comprise)", async () => {
+    const { repo, source, notifier, poller } = await makePoller();
+    // 10 + 2 de port = 12 ; vendeur en Chine → 14,40 rendu
+    const search = await repo.createSearch(newSearch({ maxPrice: 14, seeded: true }));
+    source.newly = [makeListing("cn"), makeListing("de", { country: "DE" })];
+    await poller.checkSearch(search);
+    expect(notifier.alerts.map((a) => a.listing.itemKey)).toEqual(["de"]);
+  });
+
+  it("une carte remise en ligne par le même vendeur n'est pas re-signalée", async () => {
+    const { repo, source, notifier, poller } = await makePoller();
+    const search = await repo.createSearch(newSearch({ maxPrice: 50, seeded: true }));
+    source.newly = [makeListing("1", { title: "Wemby Prizm Silver" })];
+    await poller.checkSearch(search);
+    source.newly = [makeListing("2", { title: "Wemby Prizm Silver!" })];
+    await poller.checkSearch(search);
+    expect(notifier.alerts.map((a) => a.listing.itemKey)).toEqual(["1"]);
+  });
 });

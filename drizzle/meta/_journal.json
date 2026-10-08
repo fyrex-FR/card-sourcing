@@ -15,6 +15,13 @@
       "when": 1791471459702,
       "tag": "0001_alert_history",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791474786407,
+      "tag": "0002_buying_workflow",
+      "breakpoints": true
     }
   ]
 }

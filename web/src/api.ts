@@ -1,7 +1,14 @@
-import type { AlertDto, PreviewItemDto, SearchDto, StatusDto } from "../../src/web/dto";
+import type { TrackStatus } from "../../src/db/schema";
+import type { AlertDto, PreviewItemDto, SearchDto, SettingsDto, StatusDto, TrackedItemDto } from "../../src/web/dto";
 import type { SearchInput } from "../../src/web/schemas";
 
-export type { AlertDto, PreviewItemDto, SearchDto, StatusDto, SearchInput };
+export type { AlertDto, PreviewItemDto, SearchDto, SettingsDto, StatusDto, TrackedItemDto, SearchInput, TrackStatus };
+
+export interface ItemPatch {
+  status?: TrackStatus | null;
+  maxBid?: number | null;
+  note?: string | null;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -53,6 +60,11 @@ export const api = {
 
   alerts: (limit = 100) => request<AlertDto[]>("GET", `/api/alerts?limit=${limit}`),
   muteItem: (itemKey: string) => request<{ ok: true }>("POST", `/api/items/${encodeURIComponent(itemKey)}/mute`),
+  updateItem: (itemKey: string, patch: ItemPatch) => request<AlertDto>("PATCH", `/api/items/${encodeURIComponent(itemKey)}`, patch),
+  tracked: () => request<TrackedItemDto[]>("GET", "/api/tracked"),
+
+  settings: () => request<SettingsDto>("GET", "/api/settings"),
+  updateSettings: (patch: Partial<SettingsDto>) => request<SettingsDto>("PUT", "/api/settings", patch),
 
   blockedSellers: () => request<string[]>("GET", "/api/blocked-sellers"),
   blockSeller: (username: string) => request<{ ok: true }>("POST", "/api/blocked-sellers", { username }),

@@ -15,9 +15,19 @@ interface FormState {
   buying: SearchInput["buying"];
   country: string;
   excludes: string[];
+  requiredWords: string[];
+  grading: SearchInput["grading"];
+  excludeLots: boolean;
+  minSellerFeedbackPct: string;
+  minSellerFeedbackScore: string;
   endingWindowMin: string;
   marketplaces: string[];
 }
+
+const numberOrNull = (raw: string) => {
+  const value = Number(raw.replace(",", "."));
+  return raw.trim() && Number.isFinite(value) && value > 0 ? value : null;
+};
 
 const toForm = (search: SearchDto): FormState => ({
   query: search.query,
@@ -25,18 +35,28 @@ const toForm = (search: SearchDto): FormState => ({
   buying: search.buying,
   country: search.country ?? "",
   excludes: search.excludes,
+  requiredWords: search.requiredWords,
+  grading: search.grading,
+  excludeLots: search.excludeLots,
+  minSellerFeedbackPct: search.minSellerFeedbackPct === null ? "" : String(search.minSellerFeedbackPct),
+  minSellerFeedbackScore: search.minSellerFeedbackScore === null ? "" : String(search.minSellerFeedbackScore),
   endingWindowMin: String(search.endingWindowMin),
   marketplaces: search.marketplaces,
 });
 
 function toInput(form: FormState): SearchInput {
-  const maxPrice = Number(form.maxPrice.replace(",", "."));
+  const score = numberOrNull(form.minSellerFeedbackScore);
   return {
     query: form.query.trim(),
-    maxPrice: form.maxPrice.trim() && maxPrice > 0 ? maxPrice : null,
+    maxPrice: numberOrNull(form.maxPrice),
     buying: form.buying,
     country: form.country || null,
     excludes: form.excludes,
+    requiredWords: form.requiredWords,
+    grading: form.grading,
+    excludeLots: form.excludeLots,
+    minSellerFeedbackPct: numberOrNull(form.minSellerFeedbackPct),
+    minSellerFeedbackScore: score === null ? null : Math.round(score),
     endingWindowMin: Number(form.endingWindowMin) || 60,
     marketplaces: form.marketplaces,
   };
@@ -58,7 +78,20 @@ export function SearchEditorPage() {
     if (form) return;
     if (existing) setForm(toForm(existing));
     else if (searchId === null && status.data) {
-      setForm({ query: "", maxPrice: "", buying: "ALL", country: "", excludes: [], endingWindowMin: "60", marketplaces: status.data.defaultMarketplaces });
+      setForm({
+        query: "",
+        maxPrice: "",
+        buying: "ALL",
+        country: "",
+        excludes: [],
+        requiredWords: [],
+        grading: "ANY",
+        excludeLots: false,
+        minSellerFeedbackPct: "",
+        minSellerFeedbackScore: "",
+        endingWindowMin: "60",
+        marketplaces: status.data.defaultMarketplaces,
+      });
     }
   }, [existing, searchId, status.data, form]);
 
@@ -154,7 +187,7 @@ export function SearchEditorPage() {
           </label>
 
           <label className="field">
-            <span>Prix max, port inclus</span>
+            <span>Prix max, rendu France</span>
             <div className="input-suffix">
               <input
                 inputMode="decimal"
@@ -167,7 +200,7 @@ export function SearchEditorPage() {
             <small>
               {input.maxPrice === null
                 ? "Sans prix max, tu es alerté pour chaque nouvelle annonce, et il n'y a pas d'alerte de fin d'enchère."
-                : "Converti depuis la devise de l'annonce, port vers la France compris."}
+                : "Carte + port vers la France + TVA d'import si le vendeur est hors UE (réglable dans Réglages)."}
             </small>
           </label>
 
@@ -244,8 +277,68 @@ export function SearchEditorPage() {
 
           <div className="field">
             <span>Mots à exclure</span>
-            <ChipsInput value={form.excludes} onChange={(value) => set("excludes", value)} placeholder="reprint, custom, lot…" />
+            <ChipsInput value={form.excludes} onChange={(value) => set("excludes", value)} placeholder="reprint, custom…" />
             <small>Une annonce dont le titre contient un de ces mots est ignorée.</small>
+          </div>
+        </section>
+
+        <section className="panel">
+          <h2>Filtres</h2>
+
+          <div className="field">
+            <span>Mots obligatoires</span>
+            <ChipsInput value={form.requiredWords} onChange={(value) => set("requiredWords", value)} placeholder="auto, /99…" />
+            <small>Le titre doit contenir chacun de ces mots.</small>
+          </div>
+
+          <div className="field">
+            <span>État de la carte</span>
+            <Segmented
+              label="État de la carte"
+              value={form.grading}
+              onChange={(value) => set("grading", value)}
+              options={[
+                { value: "ANY", label: "Toutes" },
+                { value: "GRADED", label: "Gradées" },
+                { value: "RAW", label: "Non gradées" },
+              ]}
+            />
+            <small>Gradée : PSA, BGS, SGC, CGC… dans le titre, ou état « Graded » sur eBay.</small>
+          </div>
+
+          <label className="checkbox">
+            <input type="checkbox" checked={form.excludeLots} onChange={(event) => set("excludeLots", event.target.checked)} />
+            <span>
+              Exclure les lots
+              <small>Titres avec « lot », « bundle », « 10 cards »…</small>
+            </span>
+          </label>
+
+          <div className="field">
+            <span>Vendeur fiable</span>
+            <div className="field-row">
+              <div className="input-suffix">
+                <input
+                  inputMode="decimal"
+                  value={form.minSellerFeedbackPct}
+                  onChange={(event) => set("minSellerFeedbackPct", event.target.value.replace(/[^\d.,]/g, ""))}
+                  placeholder="98"
+                  aria-label="Avis positifs minimum"
+                />
+                <span>% d'avis positifs min.</span>
+              </div>
+              <div className="input-suffix">
+                <input
+                  inputMode="numeric"
+                  value={form.minSellerFeedbackScore}
+                  onChange={(event) => set("minSellerFeedbackScore", event.target.value.replace(/\D/g, ""))}
+                  placeholder="50"
+                  aria-label="Évaluations minimum"
+                />
+                <span>évaluations min.</span>
+              </div>
+            </div>
+            <small>Laisse vide pour ne pas filtrer.</small>
           </div>
         </section>
 
@@ -297,13 +390,13 @@ export function SearchEditorPage() {
             {watchesEnding ? ", et pour les enchères qui se terminent sous ton prix max." : "."}
           </p>
           <div className="listing-grid">
-            {preview.data.map(({ listing, totalHome }) => (
+            {preview.data.map(({ listing, totalHome, importCost }) => (
               <ListingCard
                 key={listing.itemKey}
                 title={listing.title}
                 url={listing.url}
                 imageUrl={listing.imageUrl}
-                {...priceParts(listing, totalHome, home)}
+                {...priceParts(listing, totalHome, importCost, home)}
                 endAt={listing.buyingOptions.includes("AUCTION") ? listing.endAt : null}
                 meta={[
                   listing.buyingOptions.includes("AUCTION") ? `🔨 ${listing.bidCount ?? 0} offre${(listing.bidCount ?? 0) > 1 ? "s" : ""}` : "🛒 Achat immédiat",

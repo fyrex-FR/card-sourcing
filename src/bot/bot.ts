@@ -211,6 +211,15 @@ export function setupBot(bot: Bot, deps: BotDeps) {
     await ctx.editMessageReplyMarkup({ reply_markup: handledAlertKeyboard(item.url, label) }).catch(() => undefined);
   });
 
+  bot.callbackQuery(/^watch:(.+)$/, async (ctx) => {
+    const item = await repo.updateItem(ctx.match[1]!, { status: "watch" }, poller.now());
+    if (!item) return void (await ctx.answerCallbackQuery("Annonce inconnue"));
+    await ctx.answerCallbackQuery(item.isAuction ? "Suivie : rappel avant la fin de l'enchère" : "Ajoutée à ton suivi");
+    await ctx
+      .editMessageReplyMarkup({ reply_markup: handledAlertKeyboard(item.url, "⭐ Suivie (voir l'onglet Suivi)") })
+      .catch(() => undefined);
+  });
+
   bot.callbackQuery(/^unblock:(.+)$/, async (ctx) => {
     await repo.unblockSeller(ctx.match[1]!);
     await ctx.answerCallbackQuery(`${ctx.match[1]} débloqué`);

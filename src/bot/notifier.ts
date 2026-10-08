@@ -1,9 +1,10 @@
 import type { Api } from "grammy";
 import type { Notifier } from "../alerts/notifier.js";
+import type { Reminder } from "../alerts/reminders.js";
 import type { Alert } from "../alerts/rules.js";
 import type { Search } from "../db/schema.js";
-import { alertCaption, escapeHtml, searchLabel, seedDigest } from "./format.js";
-import { alertKeyboard } from "./keyboards.js";
+import { alertCaption, escapeHtml, reminderMessage, searchLabel, seedDigest } from "./format.js";
+import { alertKeyboard, reminderKeyboard } from "./keyboards.js";
 
 export class TelegramNotifier implements Notifier {
   constructor(
@@ -49,6 +50,14 @@ export class TelegramNotifier implements Notifier {
 
   async rateLimited(pauseMinutes: number): Promise<void> {
     await this.send(`⛔ eBay renvoie 429 (quota atteint). Pause de ${pauseMinutes} min.`);
+  }
+
+  async reminder(reminder: Reminder): Promise<void> {
+    await this.api.sendMessage(this.chatId, reminderMessage(reminder, this.homeCurrency, this.clock()), {
+      parse_mode: "HTML",
+      link_preview_options: { is_disabled: true },
+      reply_markup: reminder.gone ? undefined : reminderKeyboard(reminder.item.url),
+    });
   }
 
   async budgetReached(used: number, budget: number): Promise<void> {

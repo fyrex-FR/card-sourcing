@@ -4,7 +4,7 @@ import { api } from "../api";
 import type { AlertDto } from "../api";
 import { ListingCard } from "../components/ListingCard";
 import { useToast } from "../components/Toast";
-import { money, timeAgo } from "../format";
+import { STATUS_LABEL, money, timeAgo } from "../format";
 
 const KIND = {
   new: { label: "🆕 Nouvelle annonce", className: "badge-new" },
@@ -22,6 +22,10 @@ export function AlertsPage() {
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["alerts"] });
   const mute = useMutation({ mutationFn: (alert: AlertDto) => api.muteItem(alert.itemKey), onSuccess: () => (toast("Carte ignorée"), refresh()) });
+  const watch = useMutation({
+    mutationFn: (alert: AlertDto) => api.updateItem(alert.itemKey, { status: "watch" }),
+    onSuccess: () => (toast("Ajoutée au suivi"), refresh(), queryClient.invalidateQueries({ queryKey: ["tracked"] })),
+  });
   const block = useMutation({
     mutationFn: (alert: AlertDto) => api.blockSeller(alert.seller),
     onSuccess: (_, alert) => (toast(`${alert.seller} bloqué`), refresh(), queryClient.invalidateQueries({ queryKey: ["blocked"] })),
@@ -73,8 +77,13 @@ export function AlertsPage() {
               url={alert.url}
               imageUrl={alert.imageUrl}
               price={money(alert.lastTotal, home)}
-              priceDetail="port inclus"
-              badge={kind && <span className={`badge ${kind.className}`}>{kind.label}</span>}
+              priceDetail={alert.importCost ? `rendu France, dont ${money(alert.importCost, home)} TVA/import` : "port inclus"}
+              badge={
+                <div className="badges">
+                  {kind && <span className={`badge ${kind.className}`}>{kind.label}</span>}
+                  {alert.status && <span className="badge badge-status">{STATUS_LABEL[alert.status]}</span>}
+                </div>
+              }
               endAt={alert.isAuction ? alert.endAt : null}
               dimmed={alert.muted}
               meta={[alert.search && `🔎 ${alert.search.query}`, alert.seller && `👤 ${alert.seller}`, `🕑 ${timeAgo(alert.lastAlertedAt)}`]}
@@ -83,14 +92,19 @@ export function AlertsPage() {
                   <a className="button small primary" href={alert.url} target="_blank" rel="noreferrer">
                     Voir sur eBay
                   </a>
-                  {!alert.muted && (
+                  {!alert.status && !alert.muted && (
+                    <button className="button small" onClick={() => watch.mutate(alert)}>
+                      ⭐ Suivre
+                    </button>
+                  )}
+                  {!alert.muted && !alert.status && (
                     <button className="button small" onClick={() => mute.mutate(alert)}>
                       Ignorer
                     </button>
                   )}
                   {alert.seller && (
                     <button className="button small ghost" onClick={() => block.mutate(alert)}>
-                      Bloquer le vendeur
+                      Bloquer vendeur
                     </button>
                   )}
                 </>

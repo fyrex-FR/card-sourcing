@@ -7,9 +7,14 @@ const NEXT_BUYING: Record<Buying, Buying> = { ALL: "AUCTION", AUCTION: "FIXED_PR
 export function alertKeyboard(itemKey: string, url: string): InlineKeyboard {
   return new InlineKeyboard()
     .url("🔗 Voir sur eBay", url)
+    .text("⭐ Suivre", `watch:${itemKey}`)
     .row()
     .text("🙈 Ignorer", `mute:${itemKey}`)
     .text("🚫 Bloquer vendeur", `block:${itemKey}`);
+}
+
+export function reminderKeyboard(url: string): InlineKeyboard {
+  return new InlineKeyboard().url("🔨 Enchérir sur eBay", url);
 }
 
 export function handledAlertKeyboard(url: string, label: string): InlineKeyboard {

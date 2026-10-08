@@ -28,12 +28,22 @@ async function makeApp() {
   };
   // Réponses JSON lues librement dans les tests.
   const json = async (method: string, path: string, body?: unknown): Promise<any> => (await call(method, path, body)).json();
+  /** Clic sur le bouton de la page de confirmation du lien. */
+  const confirmLink = async (url: string) => {
+    const response = await app.request("/auth/callback", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: new URL(url).searchParams.get("token")! }),
+    });
+    const setCookie = response.headers.get("set-cookie");
+    if (setCookie) cookie = setCookie.split(";")[0]!;
+    return response;
+  };
   const login = async () => {
     await call("POST", "/api/auth/request");
-    const response = await call("GET", new URL(challenges.at(-1)!.url).pathname + new URL(challenges.at(-1)!.url).search);
-    expect(response.status).toBe(302);
+    expect((await confirmLink(challenges.at(-1)!.url)).status).toBe(302);
   };
-  return { ...deps, app, call, json, login, challenges };
+  return { ...deps, app, call, json, login, confirmLink, challenges };
 }
 
 describe("authentification", () => {
@@ -44,13 +54,19 @@ describe("authentification", () => {
     expect((await call("GET", "/api/me")).status).toBe(401);
   });
 
-  it("connexion par lien : usage unique, cookie sécurisé", async () => {
-    const { call, challenges } = await makeApp();
+  it("connexion par lien : ouvrir le lien ne le consomme pas, le bouton oui, une seule fois", async () => {
+    const { call, confirmLink, challenges } = await makeApp();
     await call("POST", "/api/auth/request");
     const url = new URL(challenges[0]!.url);
     expect(url.origin).toBe("https://alertes.test");
 
-    const first = await call("GET", url.pathname + url.search);
+    // Un aperçu de lien ou un robot qui charge l'URL ne grille pas le jeton.
+    const page = await call("GET", url.pathname + url.search);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain('method="post"');
+    expect((await call("GET", "/api/me")).status).toBe(401);
+
+    const first = await confirmLink(url.toString());
     expect(first.headers.get("location")).toBe("/");
     const setCookie = first.headers.get("set-cookie")!;
     expect(setCookie).toMatch(/HttpOnly/);
@@ -58,7 +74,7 @@ describe("authentification", () => {
     expect(setCookie).toMatch(/SameSite=Lax/);
     expect((await call("GET", "/api/me")).status).toBe(200);
 
-    const replay = await call("GET", url.pathname + url.search);
+    const replay = await confirmLink(url.toString());
     expect(replay.headers.get("location")).toBe("/?login=expired");
   });
 
@@ -136,7 +152,7 @@ describe("API recherches", () => {
     await poller.checkSearch(search);
 
     const [alert] = await json("GET", "/api/alerts");
-    expect(alert).toMatchObject({ itemKey: "a", lastAlertKind: "new", imageUrl: "https://img/a.jpg", lastTotal: 12, search: { id: search.id, query: "wemby" } });
+    expect(alert).toMatchObject({ itemKey: "a", lastAlertKind: "new", imageUrl: "https://img/a.jpg", lastTotal: expect.closeTo(14.4), importCost: expect.closeTo(2.4), search: { id: search.id, query: "wemby" } });
 
     await call("POST", "/api/items/a/mute");
     await call("POST", "/api/blocked-sellers", { username: "Seller1" });
@@ -154,5 +170,48 @@ describe("API recherches", () => {
     expect(status).toMatchObject({ paused: false, activeSearches: 1, callsPerCycle: 2, intervalSeconds: 120, dailyBudget: 4500 });
     await call("PUT", "/api/state", { paused: true });
     expect((await json("GET", "/api/status")).paused).toBe(true);
+  });
+
+  it("suivi d'une carte : statut, plafond et mise max conseillée", async () => {
+    const { call, json, login, repo, source, poller } = await makeApp();
+    await login();
+    const search = await repo.createSearch({ query: "wemby", maxPrice: 50, marketplaces: ["EBAY_US"], seeded: true });
+    source.newly = [makeListing("a", { endInMin: 600, shipping: 5 })];
+    await poller.checkSearch(search);
+
+    expect((await call("PATCH", "/api/items/a", { status: "nope" })).status).toBe(400);
+    const updated = await json("PATCH", "/api/items/a", { status: "bid", maxBid: 36, note: "pour le client" });
+    expect(updated).toMatchObject({ status: "bid", maxBid: 36, note: "pour le client" });
+
+    const [tracked] = await json("GET", "/api/tracked");
+    expect(tracked).toMatchObject({ itemKey: "a", status: "bid" });
+    expect(tracked.maxBidListing).toBeCloseTo(25);
+
+    await call("PATCH", "/api/items/a", { status: null });
+    expect(await json("GET", "/api/tracked")).toEqual([]);
+  });
+
+  it("réglages d'import", async () => {
+    const { call, json, login } = await makeApp();
+    await login();
+    expect(await json("GET", "/api/settings")).toEqual({ importVatRate: 0.2, customsFee: 0, reminderMinutes: 10 });
+    expect((await call("PUT", "/api/settings", { importVatRate: 2 })).status).toBe(400);
+    expect(await json("PUT", "/api/settings", { customsFee: 15, reminderMinutes: 5 })).toEqual({ importVatRate: 0.2, customsFee: 15, reminderMinutes: 5 });
+  });
+
+  it("filtres avancés d'une recherche", async () => {
+    const { json, login } = await makeApp();
+    await login();
+    const created = await json("POST", "/api/searches", {
+      query: "wemby",
+      marketplaces: ["EBAY_US"],
+      requiredWords: ["Auto"],
+      grading: "RAW",
+      excludeLots: true,
+      minSellerFeedbackPct: 98,
+    });
+    expect(created).toMatchObject({ requiredWords: ["auto"], grading: "RAW", excludeLots: true, minSellerFeedbackPct: 98, minSellerFeedbackScore: null });
+    const patched = await json("PATCH", `/api/searches/${created.id}`, { grading: "GRADED" });
+    expect(patched).toMatchObject({ grading: "GRADED", requiredWords: ["auto"], excludeLots: true });
   });
 });

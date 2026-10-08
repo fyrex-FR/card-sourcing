@@ -3,6 +3,7 @@ import { serve } from "@hono/node-server";
 import { autoRetry } from "@grammyjs/auto-retry";
 import { Bot } from "grammy";
 import { Poller } from "./alerts/poller.js";
+import { Reminders } from "./alerts/reminders.js";
 import { COMMANDS, setupBot } from "./bot/bot.js";
 import { loginMessage } from "./bot/format.js";
 import { TelegramNotifier } from "./bot/notifier.js";
@@ -24,19 +25,17 @@ async function main(): Promise<void> {
   const bot = new Bot(config.telegramToken);
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
 
-  const poller = new Poller({
-    repo,
-    source: new EbayClient({
-      clientId: config.ebayClientId,
-      clientSecret: config.ebayClientSecret,
-      deliveryCountry: config.deliveryCountry,
-      deliveryZip: config.deliveryZip,
-      linkDomain: config.linkDomain,
-    }),
-    fx: new Fx(),
-    notifier: new TelegramNotifier(bot.api, config.telegramChatId, config.homeCurrency),
-    config,
+  const source = new EbayClient({
+    clientId: config.ebayClientId,
+    clientSecret: config.ebayClientSecret,
+    deliveryCountry: config.deliveryCountry,
+    deliveryZip: config.deliveryZip,
+    linkDomain: config.linkDomain,
   });
+  const fx = new Fx();
+  const notifier = new TelegramNotifier(bot.api, config.telegramChatId, config.homeCurrency);
+  const poller = new Poller({ repo, source, fx, notifier, config });
+  const reminders = new Reminders({ repo, source, fx, notifier, config });
 
   const links = new LoginLinks(config.publicUrl);
   const { settled } = setupBot(bot, { repo, poller, config, createLoginLink: () => links.create() });
@@ -59,6 +58,7 @@ async function main(): Promise<void> {
   const shutdown = async () => {
     console.log("[main] arrêt…");
     poller.stop();
+    reminders.stop();
     server.close();
     await bot.stop();
     await settled();
@@ -70,6 +70,7 @@ async function main(): Promise<void> {
   if (config.telegramChatId) {
     await bot.api.sendMessage(config.telegramChatId, "🟢 Alerteur démarré. /login pour l'interface web, /help pour l'aide.");
     void poller.start();
+    reminders.start();
   } else {
     console.log("[main] TELEGRAM_CHAT_ID vide : envoie un message au bot, il te répondra ton chat id.");
   }

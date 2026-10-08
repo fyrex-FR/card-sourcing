@@ -3,6 +3,7 @@ import { NavLink, Outlet } from "react-router";
 const TABS = [
   { to: "/", label: "Recherches", icon: "🔎", end: true },
   { to: "/alertes", label: "Alertes", icon: "🔔", end: false },
+  { to: "/suivi", label: "Suivi", icon: "⭐", end: false },
   { to: "/reglages", label: "Réglages", icon: "⚙️", end: false },
 ];
 

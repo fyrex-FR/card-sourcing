@@ -1,12 +1,21 @@
-import { asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, notInArray, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { apiUsage, appState, blockedSellers, items, searches } from "./schema.js";
-import type { AlertKind, AppState, Item, NewSearch, Search } from "./schema.js";
+import type { AlertKind, AppState, Item, NewSearch, Search, TrackStatus } from "./schema.js";
 
 export type SearchPatch = Partial<Omit<NewSearch, "id" | "createdAt">>;
 
 export type ItemUpsert = Pick<Item, "itemKey" | "searchId" | "title" | "url" | "seller" | "lastTotal"> &
-  Partial<Pick<Item, "imageUrl" | "isAuction" | "endAt">>;
+  Partial<
+    Pick<
+      Item,
+      "imageUrl" | "isAuction" | "endAt" | "fingerprint" | "country" | "marketplace" | "price" | "shipping" | "currency" | "bidCount" | "importCost"
+    >
+  >;
+
+export type ItemPatch = Partial<Pick<Item, "status" | "maxBid" | "note">>;
+
+export type ItemPriceUpdate = Pick<Item, "price" | "bidCount" | "endAt" | "lastTotal" | "importCost">;
 
 export type AlertHistoryEntry = Item & { search: Pick<Search, "id" | "query"> | null };
 
@@ -70,9 +79,15 @@ export class Repo {
         target: items.itemKey,
         set: {
           title: sql`excluded.title`,
+          fingerprint: sql`excluded.fingerprint`,
           imageUrl: sql`excluded.image_url`,
           endAt: sql`excluded.end_at`,
+          price: sql`excluded.price`,
+          shipping: sql`excluded.shipping`,
+          currency: sql`excluded.currency`,
+          bidCount: sql`excluded.bid_count`,
           lastTotal: sql`excluded.last_total`,
+          importCost: sql`excluded.import_cost`,
         },
       });
   }
@@ -108,6 +123,71 @@ export class Repo {
 
   async muteItem(itemKey: string): Promise<void> {
     await this.db.update(items).set({ muted: true }).where(eq(items.itemKey, itemKey));
+  }
+
+  /** Pour chaque empreinte, l'état des autres annonces (hors `excludeKeys`) : ignorée, déjà signalée. */
+  async fingerprintStates(fingerprints: string[], excludeKeys: string[]): Promise<Map<string, { muted: boolean; alerted: boolean }>> {
+    if (fingerprints.length === 0) return new Map();
+    const rows = await this.db
+      .select({
+        fingerprint: items.fingerprint,
+        muted: sql<boolean>`bool_or(${items.muted})`,
+        alerted: sql<boolean>`bool_or(${items.alertedNewAt} is not null)`,
+      })
+      .from(items)
+      .where(
+        and(
+          inArray(items.fingerprint, fingerprints),
+          excludeKeys.length > 0 ? notInArray(items.itemKey, excludeKeys) : undefined,
+        ),
+      )
+      .groupBy(items.fingerprint);
+    return new Map(rows.map((row) => [row.fingerprint!, { muted: row.muted, alerted: row.alerted }]));
+  }
+
+  // --- suivi d'achat ------------------------------------------------------
+
+  async updateItem(itemKey: string, patch: ItemPatch, at: Date): Promise<Item | undefined> {
+    const statusChange = "status" in patch ? { statusChangedAt: at, remindedAt: null } : {};
+    const [row] = await this.db
+      .update(items)
+      .set({ ...patch, ...statusChange })
+      .where(eq(items.itemKey, itemKey))
+      .returning();
+    return row;
+  }
+
+  async trackedItems(): Promise<Item[]> {
+    return this.db
+      .select()
+      .from(items)
+      .where(isNotNull(items.status))
+      .orderBy(sql`${items.endAt} asc nulls last`, desc(items.statusChangedAt));
+  }
+
+  /** Enchères suivies qui se terminent dans les `minutes` à venir et pas encore rappelées. */
+  async dueReminders(now: Date, minutes: number): Promise<Item[]> {
+    return this.db
+      .select()
+      .from(items)
+      .where(
+        and(
+          inArray(items.status, ["watch", "bid"] satisfies TrackStatus[]),
+          eq(items.isAuction, true),
+          eq(items.muted, false),
+          isNull(items.remindedAt),
+          gt(items.endAt, now),
+          lte(items.endAt, new Date(now.getTime() + minutes * 60_000)),
+        ),
+      )
+      .orderBy(asc(items.endAt));
+  }
+
+  async markReminded(itemKey: string, at: Date, price?: ItemPriceUpdate): Promise<void> {
+    await this.db
+      .update(items)
+      .set({ remindedAt: at, ...price })
+      .where(eq(items.itemKey, itemKey));
   }
 
   // --- vendeurs bloqués ---------------------------------------------------

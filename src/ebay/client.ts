@@ -5,6 +5,7 @@ import type { Buying } from "../db/schema.js";
 
 const TOKEN_URL = "https://api.ebay.com/identity/v1/oauth2/token";
 const SEARCH_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search";
+const ITEM_URL = "https://api.ebay.com/buy/browse/v1/item/get_item_by_legacy_id";
 
 export class EbayError extends Error {}
 export class EbayRateLimitError extends EbayError {}
@@ -30,6 +31,8 @@ export interface SearchOptions {
 export interface ListingSource {
   buildFilters(options: FilterOptions): string[];
   search(query: string, options: SearchOptions): Promise<Listing[]>;
+  /** État actuel d'une annonce ; null si elle n'existe plus. */
+  getItem(itemKey: string, marketplace: string): Promise<Listing | null>;
 }
 
 const SearchResponseSchema = z.object({ itemSummaries: z.array(z.unknown()).default([]) });
@@ -82,7 +85,7 @@ export class EbayClient implements ListingSource {
     return filters;
   }
 
-  async search(query: string, { marketplace, filters, sort, limit }: SearchOptions): Promise<Listing[]> {
+  private async headers(marketplace: string): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${await this.accessToken()}`,
       "X-EBAY-C-MARKETPLACE-ID": marketplace,
@@ -92,6 +95,22 @@ export class EbayClient implements ListingSource {
       const context = deliveryZip ? `country=${deliveryCountry},zip=${deliveryZip}` : `country=${deliveryCountry}`;
       headers["X-EBAY-C-ENDUSERCTX"] = `contextualLocation=${encodeURIComponent(context)}`;
     }
+    return headers;
+  }
+
+  async getItem(itemKey: string, marketplace: string): Promise<Listing | null> {
+    const params = new URLSearchParams({ legacy_item_id: itemKey });
+    const response = await this.fetch(`${ITEM_URL}?${params}`, { headers: await this.headers(marketplace) });
+    if (response.status === 429) throw new EbayRateLimitError("quota eBay atteint (429)");
+    if (response.status === 401) this.token = null;
+    if (response.status === 404 || response.status === 400) return null;
+    if (!response.ok) throw new EbayError(`annonce eBay ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    const parsed = ItemSummarySchema.safeParse(await response.json());
+    return parsed.success ? toListing(parsed.data, marketplace, this.options.linkDomain) : null;
+  }
+
+  async search(query: string, { marketplace, filters, sort, limit }: SearchOptions): Promise<Listing[]> {
+    const headers = await this.headers(marketplace);
     const params = new URLSearchParams({ q: query, sort, limit: String(Math.min(Math.max(limit, 1), 200)) });
     if (filters.length > 0) params.set("filter", filters.join(","));
 

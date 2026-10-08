@@ -103,12 +103,14 @@ describe("bot Telegram", () => {
     expect((await repo.getSearch(search.id))?.maxPrice).toBe(40);
   });
 
-  it("ignorer une carte et bloquer un vendeur depuis l'alerte", async () => {
+  it("suivre, ignorer une carte et bloquer un vendeur depuis l'alerte", async () => {
     const { repo, press } = await makeBot();
     const search = await repo.createSearch(newSearch());
     await repo.upsertItems([
       { itemKey: "a", searchId: search.id, title: "t", url: "https://www.ebay.fr/itm/a", seller: "Bob", lastTotal: 10 },
     ]);
+    await press("watch:a");
+    expect((await repo.getItem("a"))?.status).toBe("watch");
     await press("mute:a");
     await press("block:a");
     expect((await repo.getItem("a"))?.muted).toBe(true);

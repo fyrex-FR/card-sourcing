@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "../api";
 import { QuotaBar, Switch } from "../components/Controls";
@@ -71,6 +71,8 @@ export function SettingsPage() {
         </p>
       </section>
 
+      <ImportSettingsPanel />
+
       <section className="panel">
         <h2>Vendeurs bloqués</h2>
         <p className="muted">Leurs annonces ne déclenchent plus d'alerte.</p>
@@ -101,5 +103,80 @@ export function SettingsPage() {
         </button>
       </section>
     </>
+  );
+}
+
+function ImportSettingsPanel() {
+  const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [form, setForm] = useState({ vat: "", fee: "", reminder: "" });
+  useEffect(() => {
+    if (settings.data) {
+      setForm({
+        vat: String(Math.round(settings.data.importVatRate * 1000) / 10),
+        fee: String(settings.data.customsFee),
+        reminder: String(settings.data.reminderMinutes),
+      });
+    }
+  }, [settings.data]);
+
+  const save = useMutation({
+    mutationFn: api.updateSettings,
+    onSuccess: (data) => {
+      queryClient.setQueryData(["settings"], data);
+      void queryClient.invalidateQueries({ queryKey: ["tracked"] });
+      toast("Réglages enregistrés");
+    },
+    onError: (error) => toast(error.message, "error"),
+  });
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const num = (raw: string) => Number(raw.replace(",", "."));
+    save.mutate({ importVatRate: num(form.vat) / 100, customsFee: num(form.fee), reminderMinutes: Math.round(num(form.reminder)) });
+  };
+
+  return (
+    <form className="panel" onSubmit={submit}>
+      <div>
+        <h2>Coût rendu France</h2>
+        <p className="muted">
+          Pour un vendeur hors UE (Chine, États-Unis, Royaume-Uni…), le prix comparé à tes prix max inclut la TVA d'import, et des frais de
+          dédouanement au-delà de 150 € de marchandise.
+        </p>
+      </div>
+      <div className="field-row">
+        <label className="field">
+          <span>TVA à l'import</span>
+          <div className="input-suffix">
+            <input inputMode="decimal" value={form.vat} onChange={(e) => setForm({ ...form, vat: e.target.value })} />
+            <span>%</span>
+          </div>
+        </label>
+        <label className="field">
+          <span>Frais au-delà de 150 €</span>
+          <div className="input-suffix">
+            <input inputMode="decimal" value={form.fee} onChange={(e) => setForm({ ...form, fee: e.target.value })} />
+            <span>€ par colis</span>
+          </div>
+        </label>
+        <label className="field">
+          <span>Rappel d'enchère</span>
+          <div className="input-suffix">
+            <input inputMode="numeric" value={form.reminder} onChange={(e) => setForm({ ...form, reminder: e.target.value })} />
+            <span>min avant la fin</span>
+          </div>
+        </label>
+      </div>
+      <p className="muted small">
+        Mets la TVA à 0 pour comparer sur le seul prix carte + port. Les nouveaux réglages s'appliquent aux prochaines vérifications.
+      </p>
+      <div>
+        <button className="button primary" disabled={save.isPending || !settings.data}>
+          Enregistrer
+        </button>
+      </div>
+    </form>
   );
 }

@@ -6,8 +6,16 @@ export type { AlertKind };
 export interface Alert {
   kind: AlertKind;
   listing: Listing;
-  /** Prix total (port inclus) converti en devise locale. */
+  /** Coût rendu France (port, TVA et frais d'import inclus), en devise locale. */
   totalHome: number | null;
+  /** Dont TVA et frais d'import. */
+  importCost: number | null;
+}
+
+/** État connu des autres annonces de même empreinte (même carte remise en ligne). */
+export interface FingerprintState {
+  muted: boolean;
+  alerted: boolean;
 }
 
 export interface Evaluation {
@@ -31,12 +39,29 @@ export function containsWord(title: string, word: string): boolean {
   return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "iu").test(title);
 }
 
-export type SearchCriteria = Pick<Search, "maxPrice" | "excludes">;
+export type SearchCriteria = Pick<
+  Search,
+  "maxPrice" | "excludes" | "requiredWords" | "grading" | "excludeLots" | "minSellerFeedbackPct" | "minSellerFeedbackScore"
+>;
 
-/** Filtres communs : vendeur bloqué, mots exclus, prix max port inclus. */
+const GRADER = /\b(psa|bgs|sgc|cgc|csg|hga|bvg|tag|isa|gma|ksa|beckett)\s*-?\s*(\d{1,2}(\.5)?|gem|mint|auth(entic)?)\b/i;
+const LOT = /\b(lots?|bundle|\d+\s*(cards|cartes))\b/i;
+
+export function isGraded(listing: Pick<Listing, "title" | "condition">): boolean {
+  return /^graded$/i.test(listing.condition) || GRADER.test(listing.title);
+}
+
+export const isLot = (title: string) => LOT.test(title);
+
+/** Filtres d'une recherche : vendeur, mots, gradée ou non, lots, prix max (coût rendu). */
 export function matchesSearch(listing: Listing, criteria: SearchCriteria, totalHome: number | null, blockedSellers: Set<string>): boolean {
   if (listing.seller && blockedSellers.has(listing.seller.toLowerCase())) return false;
   if (criteria.excludes.some((word) => containsWord(listing.title, word))) return false;
+  if (!criteria.requiredWords.every((word) => containsWord(listing.title, word))) return false;
+  if (criteria.excludeLots && isLot(listing.title)) return false;
+  if (criteria.grading !== "ANY" && isGraded(listing) !== (criteria.grading === "GRADED")) return false;
+  if (criteria.minSellerFeedbackPct !== null && Number(listing.sellerFeedbackPct ?? 0) < criteria.minSellerFeedbackPct) return false;
+  if (criteria.minSellerFeedbackScore !== null && (listing.sellerFeedbackScore ?? 0) < criteria.minSellerFeedbackScore) return false;
   if (criteria.maxPrice !== null && (totalHome === null || totalHome > criteria.maxPrice)) return false;
   return true;
 }
@@ -46,10 +71,13 @@ export function evaluate(input: {
   newly: Listing[];
   ending: Listing[];
   known: Map<string, Item>;
+  /** Par empreinte (vendeur + titre), l'état des autres annonces déjà vues. */
+  fingerprints: Map<string, FingerprintState>;
+  fingerprintOf: (listing: Listing) => string;
   blockedSellers: Set<string>;
   now: Date;
   seed: boolean;
-  toHome: (listing: Listing) => number | null;
+  price: (listing: Listing) => { total: number; importCost: number } | null;
 }): Evaluation {
   const { search, known, now } = input;
   const alerts: Alert[] = [];
@@ -58,29 +86,37 @@ export function evaluate(input: {
   const handled = new Set<string>();
 
   const passes = (listing: Listing, totalHome: number | null) => matchesSearch(listing, search, totalHome, input.blockedSellers);
+  const priced = (listing: Listing) => {
+    const cost = input.price(listing);
+    return { totalHome: cost?.total ?? null, importCost: cost?.importCost ?? null };
+  };
+  const relist = (listing: Listing) => input.fingerprints.get(input.fingerprintOf(listing));
 
   for (const listing of input.ending) {
     if (handled.has(listing.itemKey) || !listing.endAt || listing.endAt <= now) continue;
-    const totalHome = input.toHome(listing);
+    const { totalHome, importCost } = priced(listing);
     if (!passes(listing, totalHome)) continue;
     handled.add(listing.itemKey);
-    const alert: Alert = { kind: "ending", listing, totalHome };
+    const alert: Alert = { kind: "ending", listing, totalHome, importCost };
     matched.push(alert);
     const item = known.get(listing.itemKey);
-    if (item?.muted || item?.alertedEndingAt) continue;
+    if (item?.muted || item?.alertedEndingAt || relist(listing)?.muted) continue;
     alerts.push(alert);
   }
 
   for (const listing of input.newly) {
     if (handled.has(listing.itemKey)) continue;
     handled.add(listing.itemKey);
-    const totalHome = input.toHome(listing);
+    const { totalHome, importCost } = priced(listing);
     if (!passes(listing, totalHome)) continue;
     const item = known.get(listing.itemKey);
     const fresh = !listing.createdAt || now.getTime() - listing.createdAt.getTime() <= NEW_LISTING_MAX_AGE_MS;
-    const alert: Alert = { kind: fresh || search.maxPrice === null ? "new" : "under", listing, totalHome };
+    const alert: Alert = { kind: fresh || search.maxPrice === null ? "new" : "under", listing, totalHome, importCost };
     matched.push(alert);
     if (item?.muted || item?.alertedNewAt) continue;
+    // Même carte, même vendeur, déjà signalée ou ignorée : c'est une remise en ligne.
+    const previous = relist(listing);
+    if (!input.seed && (previous?.muted || previous?.alerted)) continue;
     (input.seed ? seeded : alerts).push(alert);
   }
 

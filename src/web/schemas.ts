@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BUYING_OPTIONS } from "../db/schema.js";
+import { BUYING_OPTIONS, GRADING_OPTIONS, TRACK_STATUSES } from "../db/schema.js";
 import { MARKETPLACES } from "../ebay/marketplaces.js";
 
 const word = z.string().trim().toLowerCase().min(1).max(40);
@@ -16,6 +16,11 @@ const fields = {
     .regex(/^[A-Z]{2}$/, "Code pays sur 2 lettres")
     .nullable(),
   excludes: z.array(word).max(50),
+  requiredWords: z.array(word).max(20),
+  grading: z.enum(GRADING_OPTIONS),
+  excludeLots: z.boolean(),
+  minSellerFeedbackPct: z.number().min(0).max(100).nullable(),
+  minSellerFeedbackScore: z.number().int().min(0).nullable(),
   endingWindowMin: z.number().int().min(5).max(1440),
   marketplaces: z
     .array(z.string().refine((m) => MARKETPLACES.includes(m), "Site eBay inconnu"))
@@ -29,6 +34,11 @@ export const SearchInputSchema = z.object({
   buying: fields.buying.default("ALL"),
   country: fields.country.default(null),
   excludes: fields.excludes.default([]),
+  requiredWords: fields.requiredWords.default([]),
+  grading: fields.grading.default("ANY"),
+  excludeLots: fields.excludeLots.default(false),
+  minSellerFeedbackPct: fields.minSellerFeedbackPct.default(null),
+  minSellerFeedbackScore: fields.minSellerFeedbackScore.default(null),
   endingWindowMin: fields.endingWindowMin.default(60),
 });
 
@@ -37,11 +47,20 @@ export type SearchInput = z.infer<typeof SearchInputSchema>;
 /** Modification : seuls les champs envoyés changent. */
 export const SearchPatchSchema = z.object(fields).partial().extend({ active: z.boolean().optional() });
 
-export const PreviewSchema = SearchInputSchema.pick({
-  query: true,
-  maxPrice: true,
-  buying: true,
-  country: true,
-  excludes: true,
-  marketplaces: true,
-});
+export const PreviewSchema = SearchInputSchema.omit({ endingWindowMin: true });
+
+export const ItemPatchSchema = z
+  .object({
+    status: z.enum(TRACK_STATUSES).nullable(),
+    maxBid: z.number().positive().nullable(),
+    note: z.string().trim().max(500).nullable(),
+  })
+  .partial();
+
+export const SettingsSchema = z
+  .object({
+    importVatRate: z.number().min(0).max(1),
+    customsFee: z.number().min(0).max(500),
+    reminderMinutes: z.number().int().min(1).max(240),
+  })
+  .partial();

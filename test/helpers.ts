@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import type { Notifier } from "../src/alerts/notifier.js";
 import { Poller } from "../src/alerts/poller.js";
+import type { Reminder } from "../src/alerts/reminders.js";
 import type { Alert } from "../src/alerts/rules.js";
 import { MIGRATIONS_FOLDER } from "../src/db/client.js";
 import type { Database } from "../src/db/client.js";
@@ -52,6 +53,7 @@ export function makeListing(itemKey: string, overrides: Partial<Listing> & { end
 export class FakeSource implements ListingSource {
   newly: Listing[] = [];
   ending: Listing[] = [];
+  items = new Map<string, Listing | null>();
   calls: SearchOptions[] = [];
   private readonly filters = new EbayClient({ clientId: "", clientSecret: "", deliveryCountry: "FR" });
 
@@ -61,6 +63,10 @@ export class FakeSource implements ListingSource {
     this.calls.push(options);
     return options.sort === "endingSoonest" ? [...this.ending] : [...this.newly];
   }
+
+  async getItem(itemKey: string): Promise<Listing | null> {
+    return this.items.get(itemKey) ?? null;
+  }
 }
 
 export class FakeNotifier implements Notifier {
@@ -68,6 +74,7 @@ export class FakeNotifier implements Notifier {
   digests: Alert[][] = [];
   overflows: number[] = [];
   errors: string[] = [];
+  reminders: Reminder[] = [];
   failAlerts = false;
 
   async alert(alert: Alert): Promise<void> {
@@ -82,6 +89,9 @@ export class FakeNotifier implements Notifier {
   }
   async searchError(_search: Search, message: string): Promise<void> {
     this.errors.push(message);
+  }
+  async reminder(reminder: Reminder): Promise<void> {
+    this.reminders.push(reminder);
   }
   async rateLimited(): Promise<void> {}
   async budgetReached(): Promise<void> {}

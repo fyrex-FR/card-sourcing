@@ -1,4 +1,5 @@
 import type { Search } from "../db/schema.js";
+import type { Reminder } from "./reminders.js";
 import type { Alert } from "./rules.js";
 
 /** Sortie des alertes (Telegram en prod, faux notifier en test). */
@@ -9,4 +10,5 @@ export interface Notifier {
   searchError(search: Search, message: string): Promise<void>;
   rateLimited(pauseMinutes: number): Promise<void>;
   budgetReached(used: number, budget: number): Promise<void>;
+  reminder(reminder: Reminder): Promise<void>;
 }

@@ -7,6 +7,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { SearchEditorPage } from "./pages/SearchEditorPage";
 import { SearchesPage } from "./pages/SearchesPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { TrackingPage } from "./pages/TrackingPage";
 
 export function App() {
   const me = useQuery({ queryKey: ["me"], queryFn: api.me, staleTime: Infinity });
@@ -22,6 +23,7 @@ export function App() {
         <Route path="recherches/nouvelle" element={<SearchEditorPage />} />
         <Route path="recherches/:id" element={<SearchEditorPage />} />
         <Route path="alertes" element={<AlertsPage />} />
+        <Route path="suivi" element={<TrackingPage />} />
         <Route path="reglages" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

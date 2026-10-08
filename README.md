@@ -2,8 +2,8 @@
 
 Surveille eBay en continu et te prévient sur Telegram quand une carte correspondant à tes recherches apparaît.
 
-- **Interface web** : créer et régler les recherches (avec aperçu des annonces en ligne), voir l'historique des alertes, gérer les vendeurs bloqués et le quota.
-- **Telegram** : les alertes, avec les boutons Ignorer et Bloquer le vendeur. Toutes les actions sont aussi possibles en commandes.
+- **Interface web** : créer et régler les recherches (avec aperçu des annonces en ligne), voir l'historique des alertes, suivre les cartes à acheter, gérer les vendeurs bloqués, le quota et les frais d'import.
+- **Telegram** : les alertes (boutons Suivre, Ignorer, Bloquer le vendeur) et les rappels avant la fin des enchères suivies.
 
 Connexion à l'interface sans mot de passe : un lien et un code à usage unique sont envoyés sur ton Telegram.
 
@@ -13,7 +13,17 @@ Connexion à l'interface sans mot de passe : un lien et un code à usage unique 
 - 📉 **Sous ton prix max** : une annonce plus ancienne passe sous ton prix max (baisse de prix).
 - ⏰ **Enchère pas chère qui se termine** : une enchère au plus au prix max se termine dans la fenêtre choisie (60 min par défaut).
 
-Les prix sont comparés **port inclus** et convertis en EUR (taux BCE). Le port est calculé pour une livraison en France, et les annonces non livrables en France sont exclues.
+Les prix sont comparés en **coût rendu France** : carte + port vers la France, convertis en EUR (taux BCE), plus, pour un vendeur hors UE, la TVA d'import (20 % par défaut) et des frais de dédouanement au-delà de 150 € de marchandise (réglables). Les annonces non livrables en France sont exclues.
+
+## Filtres d'une recherche
+
+Mots exclus et obligatoires, cartes gradées ou non (PSA, BGS, SGC… dans le titre, ou état « Graded »), exclusion des lots, vendeur fiable (pourcentage d'avis positifs et nombre d'évaluations minimum), pays du vendeur, sites eBay.
+
+Une carte remise en ligne par le même vendeur (même titre) n'est pas signalée une deuxième fois, et une carte ignorée le reste après remise en ligne.
+
+## Suivi d'achat
+
+Chaque carte peut être **suivie**, **à enchérir** (avec un plafond en coût rendu) ou **achetée**. Pour une enchère suivie, un rappel Telegram arrive avant la fin (10 min par défaut), avec l'enchère en cours relue sur eBay et la **mise max à saisir** pour respecter le plafond. La vue « Par vendeur » regroupe les cartes d'un même vendeur pour grouper le port.
 
 Chaque alerte propose deux boutons : 🙈 Ignorer (plus d'alerte pour cette carte) et 🚫 Bloquer le vendeur. Quand tu crées une recherche, les annonces déjà en ligne sont enregistrées sans alerte : tu reçois un résumé des moins chères, puis seulement les nouveautés.
 
@@ -30,7 +40,7 @@ Chaque alerte propose deux boutons : 🙈 Ignorer (plus d'alerte pour cette cart
 
 ## Quota eBay
 
-La Browse API autorise 5000 appels par jour. Chaque recherche coûte 1 appel par site eBay et par passage, plus 1 si elle surveille les fins d'enchères (prix max défini, type « tout » ou « enchères »). L'intervalle entre deux passages est calculé pour rester sous `EBAY_DAILY_BUDGET` (4500). Par exemple, 10 recherches sur EBAY_US donnent un passage toutes les ~6 min.
+La Browse API autorise 5000 appels par jour. Chaque recherche coûte 1 appel par site eBay et par passage, plus 1 si elle surveille les fins d'enchères (prix max défini, type « tout » ou « enchères »). Chaque rappel d'enchère suivie coûte 1 appel. L'intervalle entre deux passages est calculé pour rester sous `EBAY_DAILY_BUDGET` (4500). Par exemple, 10 recherches sur EBAY_US donnent un passage toutes les ~6 min.
 
 ## Stack
 
@@ -46,7 +56,9 @@ Node 22+ et TypeScript, avec :
 src/
   main.ts              démarrage et câblage
   config.ts            variables d'environnement (validées)
-  alerts/rules.ts      règles d'alerte (fonction pure)
+  alerts/rules.ts      règles d'alerte et filtres (fonctions pures)
+  alerts/pricing.ts    coût rendu France, mise max, empreinte anti-doublon
+  alerts/reminders.ts  rappels avant la fin des enchères suivies
   alerts/poller.ts     boucle de surveillance, envoi, quota
   alerts/pacing.ts     calcul du rythme
   ebay/                client Browse API et parsing des annonces
