@@ -8,6 +8,7 @@ import type { Context } from "hono";
 import { deleteCookie, getSignedCookie, setSignedCookie } from "hono/cookie";
 import type { z } from "zod";
 import type { Poller } from "../alerts/poller.js";
+import { matchesQuery } from "../alerts/rules.js";
 import type { Config } from "../config.js";
 import type { Repo, SearchPatch } from "../db/repo.js";
 import type { Search } from "../db/schema.js";
@@ -171,6 +172,7 @@ export function createWebApp(deps: WebDeps): Hono {
     const matching = body.items.filter((item) => {
       const title = item.title.toLowerCase();
       return (
+        matchesQuery(item.title, search.query) &&
         (search.maxPrice === null || item.price <= search.maxPrice) &&
         !search.excludes.some((word) => title.includes(word)) &&
         search.requiredWords.every((word) => title.includes(word))

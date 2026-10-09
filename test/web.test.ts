@@ -249,10 +249,21 @@ describe("recherches Vinted (agent OpenClaw)", () => {
     expect(source.calls).toHaveLength(0);
   });
 
+  it("ignore les annonces qui ne contiennent pas tous les termes de la requête", async () => {
+    const { app, login, json } = await makeApp();
+    await login();
+    const search = await json("POST", "/api/searches", { query: "tracy mcgrady panini noir auto", marketplaces: ["VINTED"] });
+    const push = async (items: unknown[]) =>
+      (await app.request("/api/vinted/items", { method: "POST", headers: agent, body: JSON.stringify({ searchId: search.id, items }) })).json() as Promise<any>;
+    await push([item("1", 5, "Tracy McGrady Panini Noir Auto")]);
+    const res = await push([item("2", 5, "Djorkaeff Panini Noir auto"), item("3", 5, "Van Basten Panini"), item("4", 5, "McGrady Tracy Panini Noir Autographe")]);
+    expect(res.new.map((i: any) => i.externalId)).toEqual(["4"]);
+  });
+
   it("recherche mixte : le poller n'interroge qu'eBay, la partie Vinted a son propre premier passage", async () => {
     const { app, login, json, poller, source } = await makeApp();
     await login();
-    const search = await json("POST", "/api/searches", { query: "x", marketplaces: ["EBAY_US", "VINTED"] });
+    const search = await json("POST", "/api/searches", { query: "prizm", marketplaces: ["EBAY_US", "VINTED"] });
     await poller.runCycle();
     expect(source.calls.length).toBeGreaterThan(0);
     expect(source.calls.every((c) => c.marketplace === "EBAY_US")).toBe(true);

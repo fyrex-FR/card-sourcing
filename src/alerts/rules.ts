@@ -39,6 +39,17 @@ export function containsWord(title: string, word: string): boolean {
   return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "iu").test(title);
 }
 
+const fold = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+/** Vinted élargit les recherches : chaque terme de la requête doit commencer un mot du titre (« auto » couvre « autographe »). */
+export function matchesQuery(title: string, query: string): boolean {
+  const haystack = fold(title);
+  return fold(query)
+    .split(/\s+/)
+    .filter((term) => term && !term.startsWith("-"))
+    .every((term) => new RegExp(`(?<![\\p{L}\\p{N}])${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "u").test(haystack));
+}
+
 export type SearchCriteria = Pick<
   Search,
   "maxPrice" | "excludes" | "requiredWords" | "grading" | "excludeLots" | "minSellerFeedbackPct" | "minSellerFeedbackScore"

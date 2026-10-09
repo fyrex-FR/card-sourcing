@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { callsPerCycle, intervalSeconds } from "../src/alerts/pacing.js";
-import { containsWord, evaluate, isGraded, isLot } from "../src/alerts/rules.js";
+import { containsWord, evaluate, isGraded, isLot, matchesQuery } from "../src/alerts/rules.js";
 import type { FingerprintState } from "../src/alerts/rules.js";
 import type { Item, Search } from "../src/db/schema.js";
 import { totalPrice } from "../src/ebay/listing.js";
@@ -214,5 +214,16 @@ describe("rythme", () => {
     expect(intervalSeconds(searches, { dailyBudget: 4500, minIntervalSeconds: 120 })).toBe(384);
     expect(intervalSeconds(searches.slice(0, 1), { dailyBudget: 4500, minIntervalSeconds: 120 })).toBe(120);
     expect(callsPerCycle([search({ buying: "FIXED_PRICE", marketplaces: ["EBAY_US", "EBAY_GB"] })])).toBe(2);
+  });
+});
+
+describe("matchesQuery", () => {
+  it("exige chaque terme, sans accent ni casse, « auto » couvre « autographe »", () => {
+    const q = "Tracy mcgrady panini noir auto";
+    expect(matchesQuery("Tracy McGrady Panini Noir Auto /25", q)).toBe(true);
+    expect(matchesQuery("McGrady Tracy Panini Noir Autographe", q)).toBe(true);
+    expect(matchesQuery("Panini Noir Djorkaeff auto", q)).toBe(false);
+    expect(matchesQuery("Carte Van Basten Panini", q)).toBe(false);
+    expect(matchesQuery("Édgar Dávila", "edgar davila")).toBe(true);
   });
 });
